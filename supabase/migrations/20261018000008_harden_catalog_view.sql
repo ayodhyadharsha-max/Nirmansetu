@@ -61,3 +61,7 @@ GROUP BY
   b.id, b.name, b.slug, b.logo_url, v.id, v.title, v.sku, v.pack_size,
   v.attributes, v.min_order_qty, v.max_order_qty, v.weight_kg, v.dimensions_cm,
   v.selling_price_paise, v.mrp_paise, p.created_at, p.updated_at;
+
+-- Explicitly grant SELECT permission to anon and authenticated roles
+GRANT SELECT ON public.public_catalog_view TO anon, authenticated, service_role;
+
