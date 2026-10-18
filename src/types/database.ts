@@ -128,6 +128,8 @@ export interface Brand {
   updated_at: string;
 }
 
+export type PublicationStatus = 'draft' | 'published' | 'archived';
+
 export interface Product {
   id: string;
   category_id: string;
@@ -141,6 +143,8 @@ export interface Product {
   is_bulk_available: boolean;
   is_featured: boolean;
   is_active: boolean;
+  publication_status: PublicationStatus;
+  tax_rate_pct: number;
   specifications: Record<string, unknown>;
   images: string[];
   created_at: string;
@@ -157,6 +161,10 @@ export interface ProductVariant {
   title: string;
   sku: string;
   barcode: string | null;
+  pack_size: string | null;
+  mrp_paise: number;
+  selling_price_paise: number;
+  publication_status: PublicationStatus;
   attributes: Record<string, unknown>;
   min_order_qty: number;
   max_order_qty: number | null;
@@ -167,6 +175,44 @@ export interface ProductVariant {
   updated_at: string;
   // Joined relation
   supplier_products?: SupplierProduct[];
+}
+
+export interface PublicCatalogItem {
+  product_id: string;
+  product_title: string;
+  product_slug: string;
+  short_description: string | null;
+  description: string | null;
+  hsn_code: string | null;
+  unit_of_measure: string;
+  is_bulk_available: boolean;
+  is_featured: boolean;
+  specifications: Record<string, unknown>;
+  images: string[];
+  tax_rate_pct: number;
+  product_status: PublicationStatus;
+  category_id: string;
+  category_name: string;
+  category_slug: string;
+  brand_id: string | null;
+  brand_name: string | null;
+  brand_slug: string | null;
+  brand_logo: string | null;
+  variant_id: string;
+  variant_title: string;
+  sku: string;
+  pack_size: string | null;
+  attributes: Record<string, unknown>;
+  min_order_qty: number;
+  max_order_qty: number | null;
+  weight_kg: number | null;
+  dimensions_cm: Record<string, unknown> | null;
+  selling_price_paise: number;
+  mrp_paise: number;
+  total_available_stock: number;
+  is_in_stock: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Supplier {

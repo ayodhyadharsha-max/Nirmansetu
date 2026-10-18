@@ -21,6 +21,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
+  CREATE TYPE publication_status AS ENUM ('draft', 'published', 'archived');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
   CREATE TYPE order_status AS ENUM (
     'draft', 'submitted', 'confirmed', 'po_issued', 'materials_packed',
     'out_for_delivery', 'delivered', 'cancelled', 'refunded'
@@ -216,6 +220,8 @@ CREATE TABLE IF NOT EXISTS public.products (
   is_bulk_available BOOLEAN NOT NULL DEFAULT true,
   is_featured BOOLEAN NOT NULL DEFAULT false,
   is_active BOOLEAN NOT NULL DEFAULT true,
+  publication_status publication_status NOT NULL DEFAULT 'published',
+  tax_rate_pct NUMERIC(4, 2) DEFAULT 18.00 CHECK (tax_rate_pct >= 0),
   specifications JSONB NOT NULL DEFAULT '{}'::jsonb,
   images TEXT[] NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -224,6 +230,7 @@ CREATE TABLE IF NOT EXISTS public.products (
 CREATE INDEX IF NOT EXISTS idx_products_category ON public.products(category_id);
 CREATE INDEX IF NOT EXISTS idx_products_brand ON public.products(brand_id);
 CREATE INDEX IF NOT EXISTS idx_products_slug ON public.products(slug);
+CREATE INDEX IF NOT EXISTS idx_products_pub_status ON public.products(publication_status);
 DROP TRIGGER IF EXISTS set_products_updated_at ON public.products;
 CREATE TRIGGER set_products_updated_at BEFORE UPDATE ON public.products FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
 
@@ -233,6 +240,10 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
   title VARCHAR(200) NOT NULL,
   sku VARCHAR(100) NOT NULL UNIQUE,
   barcode VARCHAR(50),
+  pack_size VARCHAR(100),
+  mrp_paise BIGINT NOT NULL DEFAULT 0 CHECK (mrp_paise >= 0),
+  selling_price_paise BIGINT NOT NULL DEFAULT 0 CHECK (selling_price_paise >= 0),
+  publication_status publication_status NOT NULL DEFAULT 'published',
   attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
   min_order_qty INT NOT NULL DEFAULT 1 CHECK (min_order_qty > 0),
   max_order_qty INT CHECK (max_order_qty >= min_order_qty),
@@ -244,6 +255,7 @@ CREATE TABLE IF NOT EXISTS public.product_variants (
 );
 CREATE INDEX IF NOT EXISTS idx_variants_product ON public.product_variants(product_id);
 CREATE INDEX IF NOT EXISTS idx_variants_sku ON public.product_variants(sku);
+CREATE INDEX IF NOT EXISTS idx_variants_pub_status ON public.product_variants(publication_status);
 DROP TRIGGER IF EXISTS set_variants_updated_at ON public.product_variants;
 CREATE TRIGGER set_variants_updated_at BEFORE UPDATE ON public.product_variants FOR EACH ROW EXECUTE FUNCTION trigger_set_timestamp();
 
@@ -657,3 +669,67 @@ ALTER TABLE public.delivery_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- 17. SECURE PUBLIC CATALOG VIEW
+CREATE OR REPLACE VIEW public.public_catalog_view AS
+SELECT
+  p.id AS product_id,
+  p.title AS product_title,
+  p.slug AS product_slug,
+  p.short_description,
+  p.description,
+  p.hsn_code,
+  p.unit_of_measure,
+  p.is_bulk_available,
+  p.is_featured,
+  p.specifications,
+  p.images,
+  p.tax_rate_pct,
+  p.publication_status AS product_status,
+  c.id AS category_id,
+  c.name AS category_name,
+  c.slug AS category_slug,
+  b.id AS brand_id,
+  b.name AS brand_name,
+  b.slug AS brand_slug,
+  b.logo_url AS brand_logo,
+  v.id AS variant_id,
+  v.title AS variant_title,
+  v.sku,
+  v.pack_size,
+  v.attributes,
+  v.min_order_qty,
+  v.max_order_qty,
+  v.weight_kg,
+  v.dimensions_cm,
+  COALESCE(NULLIF(v.selling_price_paise, 0), MIN(sp.selling_price_paise), 0) AS selling_price_paise,
+  COALESCE(NULLIF(v.mrp_paise, 0), MAX(sp.mrp_paise), 0) AS mrp_paise,
+  COALESCE(SUM(CASE WHEN sp.is_available = true THEN sp.stock_quantity ELSE 0 END), 0)::INT AS total_available_stock,
+  CASE
+    WHEN COALESCE(SUM(CASE WHEN sp.is_available = true THEN sp.stock_quantity ELSE 0 END), 0) > 0 THEN true
+    ELSE false
+  END AS is_in_stock,
+  p.created_at,
+  p.updated_at
+FROM public.products p
+JOIN public.categories c ON c.id = p.category_id AND c.is_active = true
+LEFT JOIN public.brands b ON b.id = p.brand_id AND b.is_active = true
+JOIN public.product_variants v ON v.product_id = p.id AND v.is_active = true AND v.publication_status = 'published'
+LEFT JOIN public.supplier_products sp ON sp.variant_id = v.id AND sp.is_available = true
+WHERE p.is_active = true AND p.publication_status = 'published'
+GROUP BY
+  p.id, p.title, p.slug, p.short_description, p.description, p.hsn_code,
+  p.unit_of_measure, p.is_bulk_available, p.is_featured, p.specifications,
+  p.images, p.tax_rate_pct, p.publication_status, c.id, c.name, c.slug,
+  b.id, b.name, b.slug, b.logo_url, v.id, v.title, v.sku, v.pack_size,
+  v.attributes, v.min_order_qty, v.max_order_qty, v.weight_kg, v.dimensions_cm,
+  v.selling_price_paise, v.mrp_paise, p.created_at, p.updated_at;
+
+-- 18. CATALOG ADMIN MUTATION RLS POLICIES
+CREATE POLICY "Public read published products" ON public.products
+  FOR SELECT USING ((is_active = true AND publication_status = 'published') OR public.is_admin());
+CREATE POLICY "Public read published variants" ON public.product_variants
+  FOR SELECT USING ((is_active = true AND publication_status = 'published') OR public.is_admin());
+CREATE POLICY "Admins manage products" ON public.products FOR ALL USING (public.is_admin());
+CREATE POLICY "Admins manage product_variants" ON public.product_variants FOR ALL USING (public.is_admin());
+

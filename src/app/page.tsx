@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { Header } from '@/components/Header';
 import { CategoryNav } from '@/components/CategoryNav';
 import { HeroBanner } from '@/components/HeroBanner';
-import { ProductCatalog, CatalogItem } from '@/components/ProductCatalog';
+import { ProductCatalog } from '@/components/ProductCatalog';
+import { PublicCatalogItem } from '@/types/database';
 import { LocalSupplierTransparency } from '@/components/LocalSupplierTransparency';
 import { MaterialCalculatorModal } from '@/components/MaterialCalculatorModal';
 import { BulkEnquiryModal } from '@/components/BulkEnquiryModal';
@@ -28,12 +29,12 @@ export default function HomePage() {
   >([]);
 
   // Add to cart handler
-  const handleAddToCart = (item: CatalogItem, quantity: number) => {
+  const handleAddToCart = (item: PublicCatalogItem, quantity: number) => {
     setCartLines((prev) => {
-      const existing = prev.find((l) => l.item.id === item.id);
+      const existing = prev.find((l) => l.item.variant_id === item.variant_id);
       if (existing) {
         return prev.map((l) =>
-          l.item.id === item.id ? { ...l, quantity: l.quantity + quantity } : l
+          l.item.variant_id === item.variant_id ? { ...l, quantity: l.quantity + quantity } : l
         );
       }
       return [...prev, { item, quantity }];
@@ -41,18 +42,18 @@ export default function HomePage() {
     setIsCartOpen(true);
   };
 
-  const handleUpdateQuantity = (itemId: string, newQty: number) => {
+  const handleUpdateQuantity = (variantId: string, newQty: number) => {
     if (newQty <= 0) {
-      handleRemoveItem(itemId);
+      handleRemoveItem(variantId);
       return;
     }
     setCartLines((prev) =>
-      prev.map((l) => (l.item.id === itemId ? { ...l, quantity: newQty } : l))
+      prev.map((l) => (l.item.variant_id === variantId ? { ...l, quantity: newQty } : l))
     );
   };
 
-  const handleRemoveItem = (itemId: string) => {
-    setCartLines((prev) => prev.filter((l) => l.item.id !== itemId));
+  const handleRemoveItem = (variantId: string) => {
+    setCartLines((prev) => prev.filter((l) => l.item.variant_id !== variantId));
   };
 
   const handleClearCart = () => {
@@ -62,7 +63,7 @@ export default function HomePage() {
   // Total quantity and total paise
   const cartCount = cartLines.reduce((acc, l) => acc + l.quantity, 0);
   const cartTotalPaise = cartLines.reduce(
-    (acc, l) => acc + l.item.sellingPricePaise * l.quantity,
+    (acc, l) => acc + l.item.selling_price_paise * l.quantity,
     0
   );
 

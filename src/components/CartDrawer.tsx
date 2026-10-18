@@ -15,12 +15,12 @@ import {
   MapPin,
   AlertCircle,
 } from 'lucide-react';
-import { CatalogItem } from './ProductCatalog';
+import { PublicCatalogItem } from '@/types/database';
 import { formatPaiseToRupees, calculateOrderTotals } from '@/lib/money';
 import { AYODHYA_REGIONAL_HUBS } from '@/config/brand';
 
 export interface CartLine {
-  item: CatalogItem;
+  item: PublicCatalogItem;
   quantity: number;
 }
 
@@ -63,9 +63,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   // Pure integer paise financial calculation
   const calculationItems = lines.map((l) => ({
-    unitPricePaise: l.item.sellingPricePaise,
+    unitPricePaise: l.item.selling_price_paise,
     quantity: l.quantity,
-    gstRatePct: 18.0,
+    gstRatePct: l.item.tax_rate_pct ?? 18.0,
   }));
 
   const hub = AYODHYA_REGIONAL_HUBS.find((h) => h.pincode === selectedPincode) || AYODHYA_REGIONAL_HUBS[0];
@@ -208,22 +208,23 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               ) : (
                 <div className="divide-y divide-slate-100">
                   {lines.map((line) => {
-                    const lineTotalPaise = line.item.sellingPricePaise * line.quantity;
+                    const lineTotalPaise = line.item.selling_price_paise * line.quantity;
                     return (
-                      <div key={line.item.id} className="py-3 flex items-start justify-between gap-3">
+                      <div key={line.item.variant_id} className="py-3 flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
-                            {line.item.title}
+                            {line.item.product_title}
                           </h4>
                           <div className="text-[11px] text-slate-500 mt-0.5">
-                            {formatPaiseToRupees(line.item.sellingPricePaise)} per {line.item.unit}
+                            {formatPaiseToRupees(line.item.selling_price_paise)} per {line.item.unit_of_measure}
+                            {line.item.pack_size ? ` (${line.item.pack_size})` : ''}
                           </div>
                           
                           {/* Stepper */}
                           <div className="flex items-center gap-2 mt-2">
                             <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50 p-0.5">
                               <button
-                                onClick={() => onUpdateQuantity(line.item.id, line.quantity - 1)}
+                                onClick={() => onUpdateQuantity(line.item.variant_id, line.quantity - 1)}
                                 className="w-5 h-5 rounded bg-white flex items-center justify-center text-slate-600 hover:text-slate-900 text-xs shadow-xs"
                               >
                                 <Minus className="w-3 h-3" />
@@ -232,7 +233,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                                 {line.quantity}
                               </span>
                               <button
-                                onClick={() => onUpdateQuantity(line.item.id, line.quantity + 1)}
+                                onClick={() => onUpdateQuantity(line.item.variant_id, line.quantity + 1)}
                                 className="w-5 h-5 rounded bg-white flex items-center justify-center text-slate-600 hover:text-slate-900 text-xs shadow-xs"
                               >
                                 <Plus className="w-3 h-3" />
@@ -240,7 +241,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                             </div>
 
                             <button
-                              onClick={() => onRemoveItem(line.item.id)}
+                              onClick={() => onRemoveItem(line.item.variant_id)}
                               className="text-slate-400 hover:text-red-600 p-1 transition"
                               title="Remove item"
                             >

@@ -19,14 +19,16 @@ interface CategoryNavProps {
 }
 
 export const CATEGORIES_DATA = [
-  { id: 'all', name: 'All Materials', icon: Layers, count: '9+ Items' },
-  { id: 'cement', name: 'Cement & Concrete', icon: Box, count: 'UltraTech, Ambuja' },
-  { id: 'steel', name: 'Steel & TMT Rebars', icon: Wrench, count: 'Tata Tiscon, 550D' },
-  { id: 'bricks', name: 'Bricks & Aggregates', icon: Truck, count: 'Red Kiln, M-Sand' },
-  { id: 'waterproofing', name: 'Waterproofing', icon: Droplets, count: 'Dr. Fixit, Fosroc' },
-  { id: 'plumbing', name: 'Plumbing & Tanks', icon: Droplets, count: 'Supreme CPVC, Tanks' },
-  { id: 'electrical', name: 'Electrical & Wiring', icon: Zap, count: 'Havells, Polycab' },
-  { id: 'paints', name: 'Paints & Wall Finishes', icon: Paintbrush, count: 'Putty, Primer, Emulsion' },
+  { id: 'all', name: 'All Materials', icon: Layers, slug: '' },
+  { id: 'cement-construction-materials', name: 'Cement & Construction', icon: Box, slug: 'cement-construction-materials' },
+  { id: 'tiles-flooring', name: 'Tiles & Flooring', icon: Layers, slug: 'tiles-flooring' },
+  { id: 'paints-primers-putty', name: 'Paints, Primers & Putty', icon: Paintbrush, slug: 'paints-primers-putty' },
+  { id: 'electrical-products', name: 'Electrical Products', icon: Zap, slug: 'electrical-products' },
+  { id: 'plumbing-pipes-fittings', name: 'Plumbing Pipes & Fittings', icon: Droplets, slug: 'plumbing-pipes-fittings' },
+  { id: 'sanitaryware-bathroom-fittings', name: 'Sanitaryware & Bath', icon: Droplets, slug: 'sanitaryware-bathroom-fittings' },
+  { id: 'plywood-mdf-laminates', name: 'Plywood, MDF & Laminates', icon: Wrench, slug: 'plywood-mdf-laminates' },
+  { id: 'hardware-tools-fasteners', name: 'Hardware, Tools & Fasteners', icon: Wrench, slug: 'hardware-tools-fasteners' },
+  { id: 'kitchen-home-improvement', name: 'Kitchen & Home Improvement', icon: Truck, slug: 'kitchen-home-improvement' },
 ];
 
 export const CategoryNav: React.FC<CategoryNavProps> = ({
