@@ -22,6 +22,8 @@ import { formatPaiseToRupees } from '@/lib/money';
 import { ProductCard } from './ProductCard';
 import { AYODHYA_REGIONAL_HUBS } from '@/config/brand';
 
+import { useCart } from '@/context/CartContext';
+
 interface ProductDetailViewProps {
   product: PublicCatalogItem;
   relatedProducts: PublicCatalogItem[];
@@ -33,9 +35,10 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   relatedProducts,
   onAddToCart,
 }) => {
+  const cart = useCart();
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(product.min_order_qty || 1);
-  const [selectedPincode, setSelectedPincode] = useState('224123');
+  const [selectedPincode, setSelectedPincode] = useState(cart.selectedPincode || '224123');
   const [isAdded, setIsAdded] = useState(false);
 
   const images = product.images && product.images.length > 0
@@ -57,6 +60,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   const handleAdd = () => {
     if (onAddToCart) {
       onAddToCart(product, quantity);
+    } else {
+      cart.addToCart(product, quantity);
     }
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 2000);

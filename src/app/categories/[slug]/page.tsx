@@ -5,6 +5,7 @@ import { ChevronRight, ArrowLeft, Filter, ShieldCheck, FileSpreadsheet } from 'l
 import { getCategoryBySlug, listProducts, getCategories, getBrands } from '@/lib/catalog/service';
 import { ProductCard } from '@/components/ProductCard';
 import { Header } from '@/components/Header';
+import { CartDrawer } from '@/components/CartDrawer';
 import { Footer } from '@/components/Footer';
 import { BRAND_CONFIG } from '@/config/brand';
 
@@ -51,28 +52,9 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
-      {/* Lightweight Server Header */}
-      <header className="bg-slate-950 text-white py-3 px-4 sm:px-8 border-b border-slate-800">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 text-white font-black text-lg">
-            <span>{BRAND_CONFIG.name}</span>
-            <span className="text-xs text-amber-400 font-semibold uppercase tracking-wider">
-              {BRAND_CONFIG.city}
-            </span>
-          </Link>
-          <div className="flex items-center gap-4 text-xs">
-            <Link href="/search" className="text-slate-300 hover:text-white">
-              Search Catalog
-            </Link>
-            <Link
-              href="/"
-              className="px-3 py-1.5 bg-amber-400 text-slate-950 font-bold rounded-lg"
-            >
-              Back to Home
-            </Link>
-          </div>
-        </div>
-      </header>
+      {/* Modern Storefront Header */}
+      <Header />
+      <CartDrawer />
 
       {/* Breadcrumb Navigation */}
       <div className="bg-white border-b border-slate-200">
@@ -222,7 +204,7 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
                 Direct wholesale quotes for temple trusts, commercial complexes, and housing projects.
               </p>
               <Link
-                href="/"
+                href="/bulk-enquiry"
                 className="block text-center w-full py-2 bg-amber-400 text-slate-950 font-bold text-xs rounded-xl hover:bg-amber-300 transition"
               >
                 Request Quotation

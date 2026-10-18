@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { BRAND_CONFIG } from '@/config/brand';
+import { AppProviders } from '@/providers/AppProviders';
 
 export const metadata: Metadata = {
   title: `${BRAND_CONFIG.name} | Construction Materials Delivered in Ayodhya | 60-120 Min Delivery`,
@@ -26,7 +27,7 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </head>
       <body className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-        {children}
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

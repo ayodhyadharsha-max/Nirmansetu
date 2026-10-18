@@ -4,70 +4,33 @@ import React, { useState } from 'react';
 import { Header } from '@/components/Header';
 import { CategoryNav } from '@/components/CategoryNav';
 import { HeroBanner } from '@/components/HeroBanner';
+import { HomeCategoryGrid } from '@/components/HomeCategoryGrid';
 import { ProductCatalog } from '@/components/ProductCatalog';
-import { PublicCatalogItem } from '@/types/database';
+import { HomeDealsSection } from '@/components/HomeDealsSection';
+import { HomeBrandsSection } from '@/components/HomeBrandsSection';
+import { HomeContractorSection } from '@/components/HomeContractorSection';
+import { HomeHowItWorksSection } from '@/components/HomeHowItWorksSection';
 import { LocalSupplierTransparency } from '@/components/LocalSupplierTransparency';
+import { HomeFaqSection } from '@/components/HomeFaqSection';
 import { MaterialCalculatorModal } from '@/components/MaterialCalculatorModal';
 import { BulkEnquiryModal } from '@/components/BulkEnquiryModal';
-import { CartDrawer, CartLine } from '@/components/CartDrawer';
+import { CartDrawer } from '@/components/CartDrawer';
 import { Footer } from '@/components/Footer';
-import { BRAND_CONFIG } from '@/config/brand';
+import { useCart } from '@/context/CartContext';
+import { SEED_CATALOG_ITEMS } from '@/lib/catalog/seed-data';
 
 export default function HomePage() {
-  const [selectedPincode, setSelectedPincode] = useState(BRAND_CONFIG.defaultPincode);
+  const { selectedPincode, setSelectedPincode, addToCart } = useCart();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  // Cart state
-  const [cartLines, setCartLines] = useState<CartLine[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-
-  // Modal states
+  // Modals
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isEnquiryOpen, setIsEnquiryOpen] = useState(false);
   const [enquiryInitialItems, setEnquiryInitialItems] = useState<
     Array<{ title: string; approxQty: number; unit: string }>
   >([]);
 
-  // Add to cart handler
-  const handleAddToCart = (item: PublicCatalogItem, quantity: number) => {
-    setCartLines((prev) => {
-      const existing = prev.find((l) => l.item.variant_id === item.variant_id);
-      if (existing) {
-        return prev.map((l) =>
-          l.item.variant_id === item.variant_id ? { ...l, quantity: l.quantity + quantity } : l
-        );
-      }
-      return [...prev, { item, quantity }];
-    });
-    setIsCartOpen(true);
-  };
-
-  const handleUpdateQuantity = (variantId: string, newQty: number) => {
-    if (newQty <= 0) {
-      handleRemoveItem(variantId);
-      return;
-    }
-    setCartLines((prev) =>
-      prev.map((l) => (l.item.variant_id === variantId ? { ...l, quantity: newQty } : l))
-    );
-  };
-
-  const handleRemoveItem = (variantId: string) => {
-    setCartLines((prev) => prev.filter((l) => l.item.variant_id !== variantId));
-  };
-
-  const handleClearCart = () => {
-    setCartLines([]);
-  };
-
-  // Total quantity and total paise
-  const cartCount = cartLines.reduce((acc, l) => acc + l.quantity, 0);
-  const cartTotalPaise = cartLines.reduce(
-    (acc, l) => acc + l.item.selling_price_paise * l.quantity,
-    0
-  );
-
-  // From Calculator to Bulk RFQ
+  // From Estimator to Bulk RFQ
   const handleApplyCalculatedMaterials = (
     items: Array<{ title: string; approxQty: number; unit: string }>
   ) => {
@@ -76,14 +39,10 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      {/* 1. Header with dynamic PIN Code selector and live cart info */}
+    <div className="min-h-screen flex flex-col bg-white text-slate-900">
+      
+      {/* 1, 2, 3: Announcement Bar, Main Header, Desktop Mega-Menu, Mobile Nav */}
       <Header
-        selectedPincode={selectedPincode}
-        onPincodeChange={setSelectedPincode}
-        cartCount={cartCount}
-        cartTotalPaise={cartTotalPaise}
-        onOpenCart={() => setIsCartOpen(true)}
         onOpenCalculator={() => setIsCalculatorOpen(true)}
         onOpenEnquiry={() => {
           setEnquiryInitialItems([]);
@@ -91,14 +50,14 @@ export default function HomePage() {
         }}
       />
 
-      {/* 2. Sub-Category Navigation */}
+      {/* Sub-Category Navigation Bar */}
       <CategoryNav
         selectedCategory={selectedCategory}
         onSelectCategory={setSelectedCategory}
         onOpenCalculator={() => setIsCalculatorOpen(true)}
       />
 
-      {/* 3. Hero Banner with Quick SLA Checker & Contractor Card */}
+      {/* 4. Hero Banner with Quick SLA Checker & Contractor Card */}
       <HeroBanner
         onPincodeSubmit={setSelectedPincode}
         onOpenEnquiry={() => {
@@ -107,26 +66,54 @@ export default function HomePage() {
         }}
       />
 
-      {/* 4. Product Catalog with Local Supplier Attribution */}
       <main className="flex-1">
+        {/* 5. Shop by Category Grid (9 Categories) */}
+        <HomeCategoryGrid />
+
+        {/* 6. Best-Selling Products Fetched from Catalogue Backend */}
         <ProductCatalog
+          items={SEED_CATALOG_ITEMS}
           selectedCategory={selectedCategory}
           selectedPincode={selectedPincode}
-          onAddToCart={handleAddToCart}
+          onAddToCart={addToCart}
           onOpenEnquiry={() => {
             setEnquiryInitialItems([]);
             setIsEnquiryOpen(true);
           }}
         />
 
-        {/* 5. Marketplace Supplier Transparency Model */}
+        {/* 8. Deals Based on Actual Admin-Configured Promotions */}
+        <HomeDealsSection
+          items={SEED_CATALOG_ITEMS}
+          selectedPincode={selectedPincode}
+        />
+
+        {/* 7. Featured Brands Based on Approved Catalogue Data */}
+        <HomeBrandsSection />
+
+        {/* 9. Contractor and Bulk-Order Section */}
+        <HomeContractorSection
+          onOpenCalculator={() => setIsCalculatorOpen(true)}
+          onOpenEnquiry={() => {
+            setEnquiryInitialItems([]);
+            setIsEnquiryOpen(true);
+          }}
+        />
+
+        {/* 10, 11. Product Trust, Service Info & How Ordering & Fulfilment Work */}
+        <HomeHowItWorksSection />
+
+        {/* Local Supplier Transparency Model */}
         <LocalSupplierTransparency />
+
+        {/* 12. Technical FAQs and Buying Guides */}
+        <HomeFaqSection />
       </main>
 
-      {/* 6. Footer */}
+      {/* 13. Footer with Configurable Business Details and Policies */}
       <Footer />
 
-      {/* Modals & Drawers */}
+      {/* Interactive Modals & Drawers */}
       <MaterialCalculatorModal
         isOpen={isCalculatorOpen}
         onClose={() => setIsCalculatorOpen(false)}
@@ -139,15 +126,8 @@ export default function HomePage() {
         initialItems={enquiryInitialItems}
       />
 
-      <CartDrawer
-        isOpen={isCartOpen}
-        onClose={() => setIsCartOpen(false)}
-        lines={cartLines}
-        onUpdateQuantity={handleUpdateQuantity}
-        onRemoveItem={handleRemoveItem}
-        selectedPincode={selectedPincode}
-        onClearCart={handleClearCart}
-      />
+      <CartDrawer />
+
     </div>
   );
 }

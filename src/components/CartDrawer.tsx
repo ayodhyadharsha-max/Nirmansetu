@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import {
   X,
   Trash2,
@@ -14,35 +15,34 @@ import {
   Loader2,
   MapPin,
   AlertCircle,
+  ArrowRight,
 } from 'lucide-react';
 import { PublicCatalogItem } from '@/types/database';
 import { formatPaiseToRupees, calculateOrderTotals } from '@/lib/money';
 import { AYODHYA_REGIONAL_HUBS } from '@/config/brand';
-
-export interface CartLine {
-  item: PublicCatalogItem;
-  quantity: number;
-}
+import { useCart, CartLine } from '@/context/CartContext';
 
 interface CartDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  lines: CartLine[];
-  onUpdateQuantity: (itemId: string, newQty: number) => void;
-  onRemoveItem: (itemId: string) => void;
-  selectedPincode: string;
-  onClearCart: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
+  lines?: CartLine[];
+  onUpdateQuantity?: (itemId: string, newQty: number) => void;
+  onRemoveItem?: (itemId: string) => void;
+  selectedPincode?: string;
+  onClearCart?: () => void;
 }
 
-export const CartDrawer: React.FC<CartDrawerProps> = ({
-  isOpen,
-  onClose,
-  lines,
-  onUpdateQuantity,
-  onRemoveItem,
-  selectedPincode,
-  onClearCart,
-}) => {
+export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
+  const globalCart = useCart();
+
+  const isOpen = props.isOpen !== undefined ? props.isOpen : globalCart.isCartOpen;
+  const onClose = props.onClose || (() => globalCart.setIsCartOpen(false));
+  const lines = props.lines !== undefined ? props.lines : globalCart.cartLines;
+  const onUpdateQuantity = props.onUpdateQuantity || globalCart.updateQuantity;
+  const onRemoveItem = props.onRemoveItem || globalCart.removeItem;
+  const selectedPincode = props.selectedPincode || globalCart.selectedPincode;
+  const onClearCart = props.onClearCart || globalCart.clearCart;
+
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
   const [streetAddress, setStreetAddress] = useState('');
@@ -68,7 +68,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     gstRatePct: l.item.tax_rate_pct ?? 18.0,
   }));
 
-  const hub = AYODHYA_REGIONAL_HUBS.find((h) => h.pincode === selectedPincode) || AYODHYA_REGIONAL_HUBS[0];
+  const hub =
+    AYODHYA_REGIONAL_HUBS.find((h) => h.pincode === selectedPincode) || AYODHYA_REGIONAL_HUBS[0];
   const baseDeliveryFeePaise = 19900; // ₹199
   const expressFeePaise = isExpress && hub.isExpress ? 39900 : baseDeliveryFeePaise;
 
@@ -85,7 +86,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     setIsSubmitting(true);
     try {
       const payload = {
-        cartId: 'c0000000-0000-0000-0000-000000000001', // Local session cart placeholder
+        cartId: 'c0000000-0000-0000-0000-000000000001',
         pincode: selectedPincode,
         paymentMethod,
         isExpressDelivery: isExpress,
@@ -94,7 +95,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           siteOrPersonName: recipientName || 'Ayodhya Project Site',
           contactPhone: recipientPhone || '9450000000',
           streetAddress: streetAddress || 'Near Naya Ghat, Ayodhya Dham',
-          landmark: landmark || 'Opposite Mandir road',
+          landmark: landmark || 'Opposite Mandir corridor',
           pincode: selectedPincode,
           city: 'Ayodhya',
           state: 'Uttar Pradesh',
@@ -146,6 +147,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-600 font-bold transition"
+            aria-label="Close cart"
           >
             ✕
           </button>
@@ -158,7 +160,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <CheckCircle2 className="w-10 h-10" />
             </div>
             
-            <h4 className="text-2xl font-black text-slate-950">Order Placed!</h4>
+            <h4 className="text-2xl font-black text-slate-950">Site Order Confirmed!</h4>
             
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 w-full text-left space-y-2">
               <div className="flex justify-between text-xs">
@@ -182,7 +184,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </div>
 
             <p className="text-xs text-slate-500 leading-relaxed max-w-sm">
-              Your materials have been assigned to the nearest Ayodhya stockist. Share the Site Dropoff OTP with the driver upon physical inspection at your site.
+              Your materials have been routed to the nearest Ayodhya verified stockist. Inspect bags and steel at your site before sharing the OTP with the delivery driver.
             </p>
 
             <button
@@ -190,7 +192,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 setOrderReceipt(null);
                 onClose();
               }}
-              className="w-full py-3 bg-slate-950 text-amber-400 font-bold rounded-xl text-sm"
+              className="w-full py-3 bg-slate-950 text-amber-400 font-bold rounded-xl text-sm hover:bg-slate-800 transition"
             >
               Back to Catalog
             </button>
@@ -203,7 +205,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <div className="py-16 text-center space-y-3">
                   <ShoppingBag className="w-12 h-12 text-slate-300 mx-auto" />
                   <p className="text-sm font-semibold text-slate-500">Your site cart is empty</p>
-                  <p className="text-xs text-slate-400">Add cement, steel or bricks from the catalog to get started.</p>
+                  <p className="text-xs text-slate-400">Add cement, steel, or pipes from the catalog to get started.</p>
+                  <Link
+                    href="/search"
+                    onClick={onClose}
+                    className="inline-block mt-3 px-4 py-2 bg-amber-400 text-slate-950 text-xs font-bold rounded-xl hover:bg-amber-300 transition"
+                  >
+                    Browse Catalog
+                  </Link>
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
@@ -226,6 +235,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                               <button
                                 onClick={() => onUpdateQuantity(line.item.variant_id, line.quantity - 1)}
                                 className="w-5 h-5 rounded bg-white flex items-center justify-center text-slate-600 hover:text-slate-900 text-xs shadow-xs"
+                                aria-label="Decrease quantity"
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
@@ -235,6 +245,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                               <button
                                 onClick={() => onUpdateQuantity(line.item.variant_id, line.quantity + 1)}
                                 className="w-5 h-5 rounded bg-white flex items-center justify-center text-slate-600 hover:text-slate-900 text-xs shadow-xs"
+                                aria-label="Increase quantity"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
@@ -262,10 +273,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               {/* Delivery Details Form */}
               {lines.length > 0 && (
                 <div className="mt-6 pt-4 border-t border-slate-200 space-y-3">
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Site Delivery Details ({selectedPincode})</span>
-                  </h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Site Delivery Details ({selectedPincode})</span>
+                    </h4>
+                    <Link
+                      href="/cart"
+                      onClick={onClose}
+                      className="text-[11px] font-bold text-amber-600 hover:text-amber-700 flex items-center gap-0.5"
+                    >
+                      <span>Full Cart</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
 
                   <div>
                     <input
@@ -366,20 +387,30 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </div>
                 </div>
 
-                <button
-                  onClick={handleCheckout}
-                  disabled={isSubmitting}
-                  className="w-full py-3 bg-slate-950 hover:bg-slate-800 disabled:bg-slate-400 text-amber-400 font-extrabold text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-md"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Confirming Site Order...</span>
-                    </>
-                  ) : (
-                    <span>Confirm Order ({formatPaiseToRupees(totals.totalPaise)})</span>
-                  )}
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={handleCheckout}
+                    disabled={isSubmitting}
+                    className="w-full py-3 bg-slate-950 hover:bg-slate-800 disabled:bg-slate-400 text-amber-400 font-extrabold text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-md"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Confirming Site Order...</span>
+                      </>
+                    ) : (
+                      <span>Confirm Order ({formatPaiseToRupees(totals.totalPaise)})</span>
+                    )}
+                  </button>
+
+                  <Link
+                    href="/cart"
+                    onClick={onClose}
+                    className="w-full py-2 text-center text-xs font-bold text-slate-700 hover:text-slate-950 hover:underline"
+                  >
+                    Go to Full Cart & Materials Schedule →
+                  </Link>
+                </div>
               </div>
             )}
           </>

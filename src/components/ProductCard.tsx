@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { Plus, Minus, Check, ShieldCheck, Clock, AlertCircle } from 'lucide-react';
 import { PublicCatalogItem } from '@/types/database';
 import { formatPaiseToRupees } from '@/lib/money';
+import { useCart } from '@/context/CartContext';
 
 interface ProductCardProps {
   product: PublicCatalogItem;
@@ -16,8 +17,10 @@ interface ProductCardProps {
 export const ProductCard: React.FC<ProductCardProps> = ({
   product,
   onAddToCart,
-  selectedPincode = '224123',
+  selectedPincode,
 }) => {
+  const cart = useCart();
+  const effectivePincode = selectedPincode || cart.selectedPincode || '224123';
   const [quantity, setQuantity] = useState<number>(product.min_order_qty || 1);
   const [isAdded, setIsAdded] = useState(false);
 
@@ -33,6 +36,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const handleAdd = () => {
     if (onAddToCart) {
       onAddToCart(product, quantity);
+    } else {
+      cart.addToCart(product, quantity);
     }
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1800);
