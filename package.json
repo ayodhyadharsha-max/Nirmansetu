@@ -10,7 +10,7 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "db:seed": "node scripts/seed-database.js",
-    "test": "node scripts/test-integrity.js && node scripts/test-catalog.js"
+    "test": "node scripts/test-integrity.js && node scripts/test-catalog.js && node scripts/test-checkout-payment.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.1",

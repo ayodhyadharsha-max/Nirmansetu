@@ -1,12 +1,19 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { PublicCatalogItem } from '@/types/database';
 import { BRAND_CONFIG } from '@/config/brand';
+import { useAuth } from '@/context/AuthContext';
 
 export interface CartLine {
   item: PublicCatalogItem;
   quantity: number;
+}
+
+export interface AppliedCouponInfo {
+  code: string;
+  discountPaise: number;
+  description?: string;
 }
 
 interface CartContextType {
@@ -21,22 +28,38 @@ interface CartContextType {
   setIsCartOpen: (open: boolean) => void;
   selectedPincode: string;
   setSelectedPincode: (pincode: string) => void;
+  sessionToken: string;
+  appliedCoupon: AppliedCouponInfo | null;
+  applyCoupon: (code: string) => Promise<{ success: boolean; error?: string }>;
+  removeCoupon: () => void;
+  mergeGuestCartOnAuth: (userId: string) => Promise<void>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'nirmansetu_cart_v1';
 const PINCODE_KEY = 'nirmansetu_pincode_v1';
+const SESSION_KEY = 'nirmansetu_session_token_v1';
+const COUPON_KEY = 'nirmansetu_coupon_v1';
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [cartLines, setCartLines] = useState<CartLine[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedPincode, setSelectedPincodeState] = useState<string>(BRAND_CONFIG.defaultPincode);
+  const [sessionToken, setSessionToken] = useState<string>('');
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCouponInfo | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
 
-  // Restore cart and pincode from localStorage on mount (hydration-safe)
+  // Restore cart, session token and coupon on mount
   useEffect(() => {
     try {
+      let token = localStorage.getItem(SESSION_KEY);
+      if (!token) {
+        token = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        localStorage.setItem(SESSION_KEY, token);
+      }
+      setSessionToken(token);
+
       const storedCart = localStorage.getItem(STORAGE_KEY);
       if (storedCart) {
         const parsed = JSON.parse(storedCart);
@@ -48,6 +71,14 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const storedPincode = localStorage.getItem(PINCODE_KEY);
       if (storedPincode) {
         setSelectedPincodeState(storedPincode);
+      }
+
+      const storedCoupon = localStorage.getItem(COUPON_KEY);
+      if (storedCoupon) {
+        const parsedCoupon = JSON.parse(storedCoupon);
+        if (parsedCoupon?.code) {
+          setAppliedCoupon(parsedCoupon);
+        }
       }
     } catch {
       // LocalStorage access fails safely
@@ -62,7 +93,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cartLines));
     } catch {
-      // Ignore storage quota errors
+      // Ignore quota errors
     }
   }, [cartLines, isHydrated]);
 
@@ -76,13 +107,16 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addToCart = (item: PublicCatalogItem, quantity: number = item.min_order_qty || 1) => {
-    const qtyToAdd = Math.max(1, quantity);
+    const minQty = item.min_order_qty || 1;
+    const qtyToAdd = Math.max(minQty, quantity);
+
     setCartLines((prev) => {
       const existing = prev.find((l) => l.item.variant_id === item.variant_id);
       if (existing) {
+        const newQty = existing.quantity + qtyToAdd;
         return prev.map((l) =>
           l.item.variant_id === item.variant_id
-            ? { ...l, quantity: l.quantity + qtyToAdd }
+            ? { ...l, quantity: newQty }
             : l
         );
       }
@@ -107,12 +141,83 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearCart = () => {
     setCartLines([]);
+    setAppliedCoupon(null);
     try {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(COUPON_KEY);
     } catch {
       // Ignore
     }
   };
+
+  const applyCoupon = async (code: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/cart/coupon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cartId: sessionToken || 'guest-cart',
+          couponCode: code,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || 'Invalid promotional coupon' };
+      }
+
+      const couponInfo: AppliedCouponInfo = {
+        code: data.cart?.coupon?.code || code.toUpperCase(),
+        discountPaise: data.cart?.summary?.discountPaise || 0,
+        description: data.cart?.coupon?.description,
+      };
+
+      setAppliedCoupon(couponInfo);
+      try {
+        localStorage.setItem(COUPON_KEY, JSON.stringify(couponInfo));
+      } catch {
+        // Ignore
+      }
+
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Network error validating coupon' };
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    try {
+      localStorage.removeItem(COUPON_KEY);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const mergeGuestCartOnAuth = useCallback(async (userId: string) => {
+    if (!sessionToken || cartLines.length === 0) return;
+
+    try {
+      await fetch('/api/cart/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guestSessionToken: sessionToken,
+          userId,
+        }),
+      });
+    } catch {
+      // Handled
+    }
+  }, [sessionToken, cartLines.length]);
+
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user?.id && sessionToken && cartLines.length > 0) {
+      mergeGuestCartOnAuth(user.id);
+    }
+  }, [user?.id, sessionToken, cartLines.length, mergeGuestCartOnAuth]);
 
   const cartCount = cartLines.reduce((acc, l) => acc + l.quantity, 0);
   const cartTotalPaise = cartLines.reduce(
@@ -134,6 +239,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsCartOpen,
         selectedPincode,
         setSelectedPincode,
+        sessionToken,
+        appliedCoupon,
+        applyCoupon,
+        removeCoupon,
+        mergeGuestCartOnAuth,
       }}
     >
       {children}

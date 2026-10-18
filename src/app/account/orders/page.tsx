@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   ShoppingBag,
@@ -11,74 +12,90 @@ import {
   Clock,
   MapPin,
   FileSpreadsheet,
+  RotateCcw,
+  Loader2,
+  AlertCircle,
+  ChevronRight,
+  XCircle,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
-import { BRAND_CONFIG } from '@/config/brand';
-
-const SAMPLE_ORDERS = [
-  {
-    orderNumber: 'NS-AYD-20261018-8412',
-    date: '18 Oct 2026, 09:30 AM',
-    pincode: '224123',
-    hubName: 'Ayodhya Dham Hub',
-    status: 'Delivered',
-    paymentMethod: 'Pay on Site (COD)',
-    totalRupees: '₹38,500.00',
-    deliveryOtp: '7129',
-    items: [
-      {
-        title: 'UltraTech Super PPC Cement',
-        quantity: 100,
-        unit: 'bags',
-        rate: '₹385 / bag',
-        total: '₹38,500.00',
-      },
-    ],
-  },
-  {
-    orderNumber: 'NS-AYD-20261016-3901',
-    date: '16 Oct 2026, 02:15 PM',
-    pincode: '224001',
-    hubName: 'Faizabad Central Hub',
-    status: 'Delivered',
-    paymentMethod: 'Online Prepaid (Razorpay)',
-    totalRupees: '₹76,000.00',
-    deliveryOtp: '3840',
-    items: [
-      {
-        title: 'Tata Tiscon 550D TMT Rebar (12mm x 12m)',
-        quantity: 100,
-        unit: 'pieces',
-        rate: '₹760 / piece',
-        total: '₹76,000.00',
-      },
-    ],
-  },
-  {
-    orderNumber: 'NS-AYD-20261012-1108',
-    date: '12 Oct 2026, 11:45 AM',
-    pincode: '224133',
-    hubName: 'Darshannagar Industrial Hub',
-    status: 'Delivered',
-    paymentMethod: 'Pay on Site (COD)',
-    totalRupees: '₹17,800.00',
-    deliveryOtp: '9154',
-    items: [
-      {
-        title: 'Asian Paints Apex Weatherproof Exterior Emulsion (20L)',
-        quantity: 4,
-        unit: 'litres',
-        rate: '₹4,450 / 20L',
-        total: '₹17,800.00',
-      },
-    ],
-  },
-];
+import { formatPaiseToRupees } from '@/lib/money';
+import { StoredOrderRecord } from '@/lib/orders/service';
 
 export default function OrdersHistoryPage() {
+  const router = useRouter();
   const { user } = useAuth();
+  const [orders, setOrders] = useState<StoredOrderRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadOrders() {
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/orders?userId=${encodeURIComponent(user.id)}`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.orders)) {
+          setOrders(data.orders);
+        }
+      } catch {
+        // Handled
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadOrders();
+  }, [user?.id]);
+
+  const handleReorder = async (orderId: string) => {
+    setReorderingId(orderId);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage(`Materials from order re-added to cart! Redirecting to checkout...`);
+        setTimeout(() => {
+          router.push('/cart');
+        }, 1200);
+      } else {
+        setMessage(data.error || 'Failed to reorder items');
+      }
+    } catch {
+      setMessage('Failed to reorder');
+    } finally {
+      setReorderingId(null);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'delivered':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'confirmed':
+      case 'out_for_delivery':
+      case 'materials_packed':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'submitted':
+      case 'draft':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'cancelled':
+        return 'bg-rose-100 text-rose-800 border-rose-200';
+      default:
+        return 'bg-slate-100 text-slate-800 border-slate-200';
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
@@ -86,94 +103,165 @@ export default function OrdersHistoryPage() {
 
       <main className="flex-1 py-8 sm:py-12">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-          
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <Link href="/account" className="hover:text-slate-900 transition flex items-center gap-1">
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back to Account</span>
             </Link>
             <span>/</span>
-            <span className="font-bold text-slate-900">Complete Order History</span>
+            <span className="font-bold text-slate-900">Orders & Dispatches</span>
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
             <div>
-              <h1 className="text-2xl font-black text-slate-950">Site Order History</h1>
+              <h1 className="text-2xl font-black text-slate-950">Dispatches & Jobsite Orders</h1>
               <p className="text-xs text-slate-500 mt-1">
-                Verified deliveries and drop-off OTP receipts across Ayodhya construction sites.
+                Real-time tracking of partner stockist dispatches and verified delivery OTPs across Ayodhya Dham.
               </p>
             </div>
             <Link
-              href="/bulk-enquiry"
-              className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs rounded-xl transition shadow-xs flex items-center gap-1.5 self-start sm:self-auto"
+              href="/cart"
+              className="inline-flex items-center px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Bulk Order RFQ</span>
+              <ShoppingBag className="w-3.5 h-3.5 mr-1.5" />
+              Open Site Cart
             </Link>
           </div>
 
-          <div className="space-y-4">
-            {SAMPLE_ORDERS.map((order) => (
-              <div
-                key={order.orderNumber}
-                className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4"
-              >
-                {/* Order Top Bar */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-black text-sm text-slate-900">
-                        {order.orderNumber}
-                      </span>
-                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        {order.status}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      {order.date} • Delivered to PIN {order.pincode} ({order.hubName})
-                    </div>
-                  </div>
+          {message && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <span>{message}</span>
+            </div>
+          )}
 
-                  <div className="text-right">
-                    <span className="font-black text-base text-slate-950 block">
-                      {order.totalRupees}
-                    </span>
-                    <span className="text-[10px] text-slate-500">{order.paymentMethod}</span>
-                  </div>
-                </div>
-
-                {/* Items Breakdown Table */}
-                <div className="divide-y divide-slate-100">
-                  {order.items.map((item, idx) => (
-                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-slate-900">{item.title}</div>
-                        <div className="text-[11px] text-slate-500">
-                          Qty: {item.quantity} {item.unit} ({item.rate})
-                        </div>
-                      </div>
-                      <div className="font-bold text-slate-900">{item.total}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Verification OTP & Protocol */}
-                <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2 bg-slate-50 p-3 rounded-2xl">
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-700">
-                    <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                    <span>Site Drop-off OTP Verified:</span>
-                    <span className="font-mono font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded">
-                      {order.deliveryOtp}
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-slate-500">
-                    Original manufacturer test certificate archived with order.
-                  </span>
-                </div>
+          {loading ? (
+            <div className="py-16 text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-orange-600 mx-auto mb-2" />
+              <p className="text-xs text-slate-500">Loading order records from database...</p>
+            </div>
+          ) : orders.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center max-w-md mx-auto">
+              <div className="w-14 h-14 rounded-full bg-orange-50 text-orange-600 flex items-center justify-center mx-auto mb-4">
+                <ShoppingBag className="w-7 h-7" />
               </div>
-            ))}
-          </div>
+              <h3 className="text-base font-bold text-slate-900 mb-1">No Orders Found</h3>
+              <p className="text-xs text-slate-500 mb-6">
+                You have not placed any site orders yet. Add cement, steel, or tiles to begin.
+              </p>
+              <Link
+                href="/"
+                className="inline-flex items-center px-5 py-2.5 bg-orange-600 text-white font-bold text-xs rounded-xl hover:bg-orange-700 transition"
+              >
+                Browse Materials Catalog
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {orders.map((order) => (
+                <div
+                  key={order.id}
+                  className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xs hover:border-slate-300 transition"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/account/orders/${order.id}`}
+                            className="font-mono font-bold text-sm text-slate-900 hover:text-orange-600 transition flex items-center"
+                          >
+                            {order.order_number}
+                            <ChevronRight className="w-3.5 h-3.5 ml-1 text-slate-400" />
+                          </Link>
+                          <span
+                            className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getStatusBadge(
+                              order.status
+                            )}`}
+                          >
+                            {order.status.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          Placed {new Date(order.created_at).toLocaleDateString('en-IN', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+                    </div>
 
+                    <div className="flex items-center gap-3 self-end sm:self-auto">
+                      <div className="text-right">
+                        <span className="text-xs text-slate-400 block">Total</span>
+                        <span className="text-base font-extrabold text-slate-900">
+                          {formatPaiseToRupees(order.total_paise)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Materials Preview */}
+                  <div className="py-3 divide-y divide-slate-100">
+                    {order.items.map((item, idx) => (
+                      <div key={idx} className="py-2 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-orange-500" />
+                          <span className="font-semibold text-slate-800">
+                            {item.product_title_snapshot}
+                          </span>
+                          <span className="text-slate-400">
+                            ({item.quantity} {item.unit_snapshot})
+                          </span>
+                        </div>
+                        <span className="font-mono text-slate-700">
+                          {formatPaiseToRupees(item.total_paise)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Footer actions */}
+                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 text-slate-500">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                      <span>PIN {order.pincode} • Dropoff OTP: </span>
+                      <span className="font-mono font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                        {order.delivery_otp_plain || '****'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleReorder(order.id)}
+                        disabled={reorderingId === order.id}
+                        className="inline-flex items-center px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 font-bold hover:bg-slate-50 transition"
+                      >
+                        {reorderingId === order.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                        ) : (
+                          <RotateCcw className="w-3.5 h-3.5 mr-1 text-slate-500" />
+                        )}
+                        Reorder Materials
+                      </button>
+
+                      <Link
+                        href={`/account/orders/${order.id}`}
+                        className="inline-flex items-center px-3 py-1.5 rounded-lg bg-slate-900 text-white font-bold hover:bg-slate-800 transition"
+                      >
+                        View Full Details
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
 

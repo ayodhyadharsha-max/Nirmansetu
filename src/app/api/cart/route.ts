@@ -1,59 +1,29 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import {
+  getCart,
+  addItemToCart,
+  updateItemQuantity,
+  removeItemFromCart,
+} from '@/lib/cart/service';
 import { AddToCartSchema, UpdateCartItemSchema } from '@/lib/validations/cart';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { calculateOrderTotals } from '@/lib/money';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const cartId = searchParams.get('cartId');
+    const cartId = searchParams.get('cartId') || searchParams.get('sessionToken') || 'default-guest-cart';
+    const pincode = searchParams.get('pincode') || undefined;
 
-    if (!cartId) {
-      return NextResponse.json({
-        items: [],
-        summary: calculateOrderTotals({ items: [], deliveryFeePaise: 0 }),
-      });
-    }
+    const cart = await getCart(cartId, pincode);
 
-    const supabase = createServerSupabaseClient();
-    const { data: cartItems, error } = await supabase
-      .from('cart_items')
-      .select(`
-        id,
-        quantity,
-        variant_id,
-        preferred_supplier_id,
-        product_variants (
-          id,
-          title,
-          sku,
-          products (
-            id,
-            title,
-            unit_of_measure,
-            categories ( default_gst_rate_pct )
-          ),
-          supplier_products (
-            selling_price_paise,
-            mrp_paise,
-            stock_quantity,
-            is_available
-          )
-        )
-      `)
-      .eq('cart_id', cartId);
-
-    if (error || !cartItems) {
-      return NextResponse.json({
-        items: [],
-        summary: calculateOrderTotals({ items: [], deliveryFeePaise: 0 }),
-      });
-    }
-
-    return NextResponse.json({ items: cartItems });
+    return NextResponse.json({
+      success: true,
+      cart,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Cart retrieval failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
@@ -64,55 +34,111 @@ export async function POST(request: Request) {
 
     if (!result.success) {
       return NextResponse.json(
-        { success: false, errors: result.error.flatten().fieldErrors },
+        { success: false, error: 'Validation failed', errors: result.error.flatten().fieldErrors },
         { status: 400 }
       );
     }
 
     const { variantId, quantity, pincode } = result.data;
-    const supabase = createServerSupabaseClient();
+    const cartId = json.cartId || json.sessionToken;
 
-    // Verify stock and price from supplier_products
-    const { data: supplierProduct, error: spError } = await supabase
-      .from('supplier_products')
-      .select('id, supplier_id, selling_price_paise, stock_quantity, is_available')
-      .eq('variant_id', variantId)
-      .eq('is_available', true)
-      .order('priority_score', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (spError || !supplierProduct) {
-      // If DB not connected or variant unlisted, provide clear validation message
-      return NextResponse.json(
-        {
-          success: true,
-          simulated: true,
-          message: 'Item added to local session cart (Database connection pending configuration)',
-          item: { variantId, quantity, pincode },
-        },
-        { status: 200 }
-      );
+    // Check optional authenticated user
+    let userId: string | undefined;
+    try {
+      const supabase = createServerSupabaseClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      userId = user?.id;
+    } catch {
+      // Optional auth
     }
 
-    if (supplierProduct.stock_quantity < quantity) {
+    const addRes = await addItemToCart({
+      cartId,
+      sessionToken: json.sessionToken,
+      userId,
+      variantId,
+      quantity,
+      pincode,
+    });
+
+    if (!addRes.success) {
       return NextResponse.json(
-        {
-          success: false,
-          error: `Insufficient stock from local suppliers. Available: ${supplierProduct.stock_quantity}`,
-        },
+        { success: false, error: addRes.error || 'Failed to add item to cart', cart: addRes.cart },
         { status: 400 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      supplierId: supplierProduct.supplier_id,
-      sellingPricePaise: supplierProduct.selling_price_paise,
-      quantity,
+      message: 'Item added to cart',
+      cart: addRes.cart,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Cart operation failed';
+    const message = err instanceof Error ? err.message : 'Cart mutation failed';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const json = await request.json();
+    const schema = z.object({
+      cartId: z.string().min(1, 'Cart ID is required'),
+      variantId: z.string().uuid('Invalid variant ID'),
+      quantity: z.number().int().min(0, 'Quantity cannot be negative'),
+    });
+
+    const parsed = schema.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: 'Validation failed', details: parsed.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+
+    const { cartId, variantId, quantity } = parsed.data;
+    const res = await updateItemQuantity({ cartId, variantId, quantity });
+
+    if (!res.success) {
+      return NextResponse.json(
+        { success: false, error: res.error || 'Failed to update item quantity', cart: res.cart },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Cart quantity updated',
+      cart: res.cart,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Cart update failed';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const cartId = searchParams.get('cartId');
+    const variantId = searchParams.get('variantId');
+
+    if (!cartId || !variantId) {
+      return NextResponse.json(
+        { success: false, error: 'cartId and variantId query parameters are required' },
+        { status: 400 }
+      );
+    }
+
+    const res = await removeItemFromCart(cartId, variantId);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Item removed from cart',
+      cart: res.cart,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Cart removal failed';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
