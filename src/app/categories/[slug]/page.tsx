@@ -24,9 +24,24 @@ export async function generateMetadata({ params }: CategoryPageProps) {
   const category = await getCategoryBySlug(params.slug);
   if (!category) return { title: 'Category Not Found' };
 
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://nirmansetu.in';
+
   return {
     title: `${category.name} in Ayodhya | ${BRAND_CONFIG.name}`,
     description: `Buy genuine ${category.name.toLowerCase()} in Ayodhya Dham with fast 60-120 minute site delivery. Direct wholesale pricing from approved local dealers.`,
+    alternates: {
+      canonical: `/categories/${category.slug}`,
+    },
+    openGraph: {
+      title: `${category.name} | ${BRAND_CONFIG.name}`,
+      description: `Wholesale ${category.name} in Ayodhya Dham. Rapid site delivery.`,
+      url: `${baseUrl}/categories/${category.slug}`,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${category.name} | ${BRAND_CONFIG.name}`,
+      description: `Wholesale ${category.name} in Ayodhya Dham.`,
+    },
   };
 }
 
@@ -50,8 +65,32 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
     }),
   ]);
 
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://nirmansetu.in';
+  const categoryBreadcrumbs = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      {
+        '@type': 'ListItem',
+        position: 1,
+        name: 'Home',
+        item: baseUrl,
+      },
+      {
+        '@type': 'ListItem',
+        position: 2,
+        name: category.name,
+        item: `${baseUrl}/categories/${category.slug}`,
+      },
+    ],
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(categoryBreadcrumbs) }}
+      />
       {/* Modern Storefront Header */}
       <Header />
       <CartDrawer />

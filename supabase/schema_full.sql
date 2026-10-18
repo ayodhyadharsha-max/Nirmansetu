@@ -26,8 +26,9 @@ EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
   CREATE TYPE order_status AS ENUM (
-    'draft', 'submitted', 'confirmed', 'po_issued', 'materials_packed',
-    'out_for_delivery', 'delivered', 'cancelled', 'refunded'
+    'draft', 'submitted', 'confirmed', 'supplier_assigned', 'supplier_confirmed',
+    'supplier_rejected', 'processing', 'po_issued', 'materials_packed',
+    'dispatched', 'out_for_delivery', 'delivered', 'failed_delivery', 'cancelled', 'refunded'
   );
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
@@ -36,7 +37,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
-  CREATE TYPE payment_method AS ENUM ('razorpay', 'cod', 'neft_rtgs', 'credit_line');
+  CREATE TYPE payment_method AS ENUM ('razorpay', 'cod', 'neft_rtgs', 'credit_line', 'bank_transfer');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 DO $$ BEGIN
@@ -732,4 +733,51 @@ CREATE POLICY "Public read published variants" ON public.product_variants
   FOR SELECT USING ((is_active = true AND publication_status = 'published') OR public.is_admin());
 CREATE POLICY "Admins manage products" ON public.products FOR ALL USING (public.is_admin());
 CREATE POLICY "Admins manage product_variants" ON public.product_variants FOR ALL USING (public.is_admin());
+
+-- 19. SUPPLIER RFQ BIDS & PO RECONCILIATION TABLES
+CREATE TABLE IF NOT EXISTS public.supplier_rfq_bids (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  enquiry_id UUID NOT NULL REFERENCES public.bulk_enquiries(id) ON DELETE CASCADE,
+  supplier_id UUID NOT NULL REFERENCES public.suppliers(id) ON DELETE CASCADE,
+  items JSONB NOT NULL DEFAULT '[]'::jsonb,
+  total_procurement_cost_paise BIGINT NOT NULL CHECK (total_procurement_cost_paise >= 0),
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_supplier_rfq_bids_enquiry ON public.supplier_rfq_bids(enquiry_id);
+CREATE INDEX IF NOT EXISTS idx_supplier_rfq_bids_supplier ON public.supplier_rfq_bids(supplier_id);
+
+CREATE TABLE IF NOT EXISTS public.po_reconciliation_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id UUID NOT NULL REFERENCES public.supplier_purchase_orders(id) ON DELETE CASCADE,
+  variant_id UUID NOT NULL REFERENCES public.product_variants(id) ON DELETE RESTRICT,
+  ordered_quantity INT NOT NULL CHECK (ordered_quantity > 0),
+  supplied_quantity INT NOT NULL CHECK (supplied_quantity >= 0),
+  unit_cost_paise BIGINT NOT NULL CHECK (unit_cost_paise >= 0),
+  discrepancy_quantity INT GENERATED ALWAYS AS (supplied_quantity - ordered_quantity) STORED,
+  reconciliation_notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_po_reconciliation_items_po ON public.po_reconciliation_items(po_id);
+
+ALTER TABLE public.supplier_rfq_bids ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.po_reconciliation_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admins manage supplier_rfq_bids" ON public.supplier_rfq_bids
+  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+CREATE POLICY "Suppliers manage own rfq bids" ON public.supplier_rfq_bids
+  FOR ALL TO authenticated
+  USING (supplier_id IN (SELECT id FROM public.suppliers WHERE user_id = auth.uid() AND verification_status = 'verified' AND is_active = true))
+  WITH CHECK (supplier_id IN (SELECT id FROM public.suppliers WHERE user_id = auth.uid() AND verification_status = 'verified' AND is_active = true));
+
+CREATE POLICY "Admins manage po_reconciliations" ON public.po_reconciliation_items
+  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+CREATE POLICY "Suppliers view own po reconciliations" ON public.po_reconciliation_items
+  FOR SELECT TO authenticated
+  USING (po_id IN (SELECT spo.id FROM public.supplier_purchase_orders spo JOIN public.suppliers s ON s.id = spo.supplier_id WHERE s.user_id = auth.uid()));
+
 

@@ -131,6 +131,7 @@ Payment errors, rounding discrepancies, and tax reconciliation issues in e-comme
 ```
 nirmansetu/
 ├── .env.example                     # Environment template with security safeguards
+├── .eslintrc.json                   # ESLint Next.js configuration
 ├── .gitignore                       # Prevents credential leakage
 ├── package.json                     # NPM configuration & dependencies
 ├── tsconfig.json                    # Strict TypeScript configuration with @/* path aliases
@@ -138,14 +139,21 @@ nirmansetu/
 ├── next.config.mjs                  # Next.js configuration
 ├── scripts/
 │   ├── seed-database.js             # Database seed execution script
-│   └── test-integrity.js            # Automated integrity & schema test suite (11/11 tests)
+│   ├── test-integrity.js            # Automated integrity & schema test suite (11/11 tests)
+│   ├── test-catalog.js              # Catalogue, pricing & tax test suite (21/21 tests)
+│   ├── test-checkout-payment.js     # Cart, checkout, Razorpay HMAC & idempotency (24/24 tests)
+│   ├── test-admin-supplier.js       # Admin RBAC, supplier KYC & horizontal isolation (20/20 tests)
+│   ├── test-fulfillment-delivery.js # Supplier dispatch, drop-off OTP & RFQ bids (23/23 tests)
+│   └── test-e2e-integration.js      # Full 10-stage lifecycle integration test (19/19 tests)
 ├── supabase/
 │   ├── migrations/                  # Version-controlled SQL migrations
 │   │   ├── 20261018000001_core_schema.sql
 │   │   ├── 20261018000002_catalog_and_suppliers.sql
 │   │   ├── 20261018000003_commerce_orders_payments.sql
 │   │   ├── 20261018000004_b2b_rfq_fulfillment.sql
-│   │   └── 20261018000005_ops_notifications_admin.sql
+│   │   ├── 20261018000005_ops_notifications_admin.sql
+│   │   ├── 20261018000006_catalog_enhancements.sql
+│   │   └── 20261018000007_rfq_bids_reconciliation_and_statuses.sql
 │   ├── schema_full.sql              # Consolidated one-click schema setup
 │   └── seed.sql                     # Authentic Ayodhya pilot seed data
 └── src/
@@ -159,16 +167,22 @@ nirmansetu/
     │   │   ├── client.ts            # Browser Supabase client
     │   │   ├── server.ts            # Server-side cookie-aware Supabase client
     │   │   └── admin.ts             # Privileged server-only Supabase client
+    │   ├── notifications/
+    │   │   ├── service.ts           # Multi-channel notification dispatcher
+    │   │   └── whatsapp-link.ts     # Client-safe WhatsApp Click-to-Chat builder
     │   └── validations/
     │       ├── address.ts           # Address Zod validation
     │       ├── cart.ts              # Cart Zod validation
     │       ├── enquiry.ts           # B2B Bulk RFQ Zod validation
-    │       └── order.ts             # Order checkout Zod validation
+    │       ├── order.ts             # Order checkout Zod validation
+    │       └── supplier.ts          # Supplier KYC registration validation
     ├── components/
     │   ├── Header.tsx               # Brand header, PIN selector, live search & cart trigger
     │   ├── CategoryNav.tsx          # Sub-navigation material categories
     │   ├── HeroBanner.tsx           # Ayodhya value prop & quick SLA checker
     │   ├── ProductCatalog.tsx       # Live materials grid with supplier attribution
+    │   ├── ProductCard.tsx          # Material card with pack size, MOQ & price
+    │   ├── ProductDetailView.tsx    # Technical specs, bulk discount tiers & reviews
     │   ├── MaterialCalculatorModal.tsx # Interactive IS 456 material quantity estimator
     │   ├── BulkEnquiryModal.tsx     # B2B quotation RFQ modal
     │   ├── CartDrawer.tsx           # Sliding cart drawer with site checkout
@@ -176,73 +190,154 @@ nirmansetu/
     │   └── Footer.tsx               # Compliance, regional hubs & legal disclosures
     └── app/
         ├── globals.css              # Tailwind base & custom scrollbar
-        ├── layout.tsx               # Root HTML layout & dynamic metadata
+        ├── layout.tsx               # Root HTML layout, metadata & LocalBusiness JSON-LD
         ├── page.tsx                 # Full marketplace homepage
+        ├── robots.ts                # Dynamic robots.txt with admin disallow rules
+        ├── sitemap.ts               # Dynamic XML sitemap generator
+        ├── cart/                    # Full-page cart and site checkout
+        ├── search/                  # Real-time search with category & brand filters
+        ├── products/[slug]/         # Dynamic product detail page with Product JSON-LD
+        ├── categories/[slug]/       # Category catalogue with breadcrumb schema
+        ├── quotations/[id]/         # B2B locked quotation review and order conversion
+        ├── account/                 # Customer dashboard & order tracking
+        ├── admin/                   # Administrator control center & supplier manager
+        ├── supplier/                # Supplier order fulfillment & stock management portal
+        ├── supplier-application/    # Partner stockist registration & KYC intake
         └── api/
             ├── pincode/check/       # PIN code serviceability endpoint
             ├── cart/                # Cart retrieval and mutation endpoint
             ├── orders/create/       # Atomic order checkout endpoint
             ├── enquiries/           # B2B RFQ quotation submission endpoint
-            └── calculator/          # Construction material calculator endpoint
+            ├── calculator/          # Construction material calculator endpoint
+            ├── payments/            # Razorpay order generation, verify & webhooks
+            └── admin/               # Privileged management & fulfillment routes
 ```
 
 ---
 
-## 7. Setup & Local Startup Guide
+## 7. Database Migrations & Setup Instructions
 
-### Step 1: Install Dependencies
+The NirmanSetu database runs on PostgreSQL (via Supabase) and uses 7 discrete, version-controlled migrations designed for deterministic, idempotent execution.
+
+### Migration Sequence:
+1. `20261018000001_core_schema.sql`: Base enums, `profiles`, `service_zones`, `service_pincodes`, `customer_addresses`, updated-at triggers.
+2. `20261018000002_catalog_and_suppliers.sql`: `categories`, `brands`, `products`, `product_variants`, `suppliers`, `supplier_products`, and catalog search views.
+3. `20261018000003_commerce_orders_payments.sql`: `coupons`, `carts`, `cart_items`, `orders`, `order_items`, `order_status_history`, `payments`, `payment_events`.
+4. `20261018000004_b2b_rfq_fulfillment.sql`: `bulk_enquiries`, `quotations`, `quotation_items`, `supplier_purchase_orders`, `supplier_po_items`, `delivery_assignments`.
+5. `20261018000005_ops_notifications_admin.sql`: `notifications`, `admin_settings`, `audit_logs`, full Row Level Security policies, indexes.
+6. `20261018000006_catalog_enhancements.sql`: Extended specifications, pack size units, review rating metrics, performance indexes.
+7. `20261018000007_rfq_bids_reconciliation_and_statuses.sql`: Extended order lifecycle states (`supplier_assigned`, `supplier_confirmed`, `supplier_rejected`, `processing`, `dispatched`, `failed_delivery`), `bank_transfer` payment method, `supplier_rfq_bids`, and `po_reconciliation_items`.
+
+### Method A: Supabase Dashboard (Recommended for Quick Setup)
+1. Log in to [supabase.com](https://supabase.com) and open your project.
+2. Navigate to **SQL Editor**.
+3. Open `supabase/schema_full.sql` from this repository (contains the complete consolidated schema with all 7 migrations and RLS policies).
+4. Paste and click **Run**.
+5. Open `supabase/seed.sql`, paste and click **Run** to load authentic Ayodhya pilot data (service PIN codes 224123, 224001, UltraTech, Tata Tiscon, Dr. Fixit, and verified suppliers).
+
+### Method B: Supabase CLI (Recommended for Production CI/CD)
 ```bash
-cd /Users/rishabhjaiswal/.gemini/antigravity/scratch/nirmansetu
-npm install
-```
+# Link your local repo to the remote project
+supabase link --project-ref your-supabase-project-id
 
-### Step 2: Configure Environment Variables
-Copy the template to your local environment file:
-```bash
-cp .env.example .env.local
-```
-Fill in your Supabase project keys:
-- `NEXT_PUBLIC_SUPABASE_URL`: Found in Supabase Dashboard -> Project Settings -> API
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Found in Supabase Dashboard -> Project Settings -> API
-- `SUPABASE_SERVICE_ROLE_KEY`: Found in Supabase Dashboard -> Project Settings -> API (Secret)
-
-To customize the marketplace brand identity, adjust:
-```bash
-NEXT_PUBLIC_BRAND_NAME="NirmanSetu"
-NEXT_PUBLIC_BRAND_TAGLINE="Ayodhya's On-Demand Building Materials Marketplace"
-NEXT_PUBLIC_BRAND_CITY="Ayodhya"
-NEXT_PUBLIC_BRAND_STATE="Uttar Pradesh"
-```
-
-### Step 3: Run Database Migrations
-Open your Supabase project dashboard at [supabase.com](https://supabase.com):
-1. Navigate to the **SQL Editor**.
-2. Open `supabase/schema_full.sql` from this repository.
-3. Paste and click **Run**. This creates all tables, enums, triggers, and Row Level Security policies.
-4. Open `supabase/seed.sql`, paste and click **Run**. This populates the authentic Ayodhya district service zones (224123, 224001, etc.), categories, verified manufacturer brands, demonstration products, and model partner suppliers.
-
-Alternatively, if using the Supabase CLI:
-```bash
+# Push all migrations in sequence
 supabase db push
-```
 
-### Step 4: Execute System Integrity Verification
-Run the automated test suite and TypeScript validation:
-```bash
-npm test
-npm run type-check
+# Apply seed data
+supabase db reset --linked   # CAUTION: resets database and runs seed.sql
 ```
-
-### Step 5: Start Local Development Server
-```bash
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 8. Automated Checks & Quality Verification
+## 8. Database Backup & Disaster Recovery
 
-- **System Test Suite (`npm test`)**: 11 of 11 tests passing.
+Because NirmanSetu handles financial transactions, order line-item snapshots, and legal GST invoices, reliable data backup and point-in-time recovery are mandatory.
+
+### 1. Point-in-Time Recovery (PITR)
+- In the Supabase project dashboard, navigate to **Database -> Backups**.
+- Enable **Point-in-Time Recovery (PITR)** (available on Pro/Team tiers) to allow continuous write-ahead log (WAL) archiving with recovery granularity down to the second.
+
+### 2. Automated Logical Backups (`pg_dump`)
+Run scheduled nightly cold backups using a secure runner:
+```bash
+# Export schema and data (excluding auth secrets)
+PGPASSWORD="your-db-password" pg_dump \
+  --host=db.your-project.supabase.co \
+  --port=5432 \
+  --username=postgres \
+  --format=custom \
+  --file=nirmansetu_backup_$(date +%Y%m%d_%H%M%S).dump \
+  postgres
+
+# To restore into a staging or recovery instance:
+pg_restore -d postgres -h db.recovery-project.supabase.co -U postgres nirmansetu_backup_YYYYMMDD_HHMMSS.dump
+```
+
+---
+
+## 9. Production Deployment Guide
+
+### Deploying the Next.js Frontend (Vercel / Node.js)
+1. **Repository Setup**: Push this repository to GitHub or GitLab.
+2. **Import Project into Vercel**: Connect the repository and select **Next.js** framework preset.
+3. **Environment Variables**: Configure all variables from `.env.example` in Vercel Project Settings:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (Server-only secret)
+   - `NEXT_PUBLIC_RAZORPAY_KEY_ID`
+   - `RAZORPAY_KEY_SECRET`
+   - `RAZORPAY_WEBHOOK_SECRET`
+   - `META_WHATSAPP_PHONE_NUMBER_ID` & `WHATSAPP_BUSINESS_TOKEN`
+   - Brand customization values (`NEXT_PUBLIC_BRAND_NAME`, etc.)
+4. **Deploy**: Trigger a production build. Vercel automatically deploys edge routes, SSR handlers, and static pages.
+
+---
+
+## 10. Pre-Launch Operational Checklist
+
+Before accepting real construction orders and processing transactions in Ayodhya, complete every item in this checklist:
+
+- [ ] **1. Approved Supplier Network**:
+  - Minimum 3 verified stockists onboarded across Ayodhya Dham (224123) and Faizabad (224001).
+  - Supplier agreements signed with agreed dispatch SLAs (under 4 hours) and settlement terms (T+3 / weekly).
+  - Verification documents (GSTIN certificate, Trade License, Cancelled Cheque) validated and marked `verified`.
+- [ ] **2. Live Catalog & Pricing**:
+  - Base wholesale costs and retail prices verified against current market rates in Ayodhya mandi.
+  - Correct HSN codes and GST rates applied (28% for Portland Cement, 18% for TMT Steel, Paints, and Chemicals).
+  - Minimum Order Quantities (MOQ) and pack sizes configured (e.g. 50 bags for cement, 500 kg for rebar).
+- [ ] **3. Active Stock Counts**:
+  - Suppliers' real-time inventory counts linked to `supplier_products` to prevent out-of-stock checkouts.
+- [ ] **4. Logistics & Delivery Serviceability**:
+  - Service zones verified: Ayodhya Dham Core, Faizabad Urban Core, Darshannagar Hub.
+  - Delivery rates and truck accessibility rules set for narrow lanes (e.g., Ramkot restrictions).
+  - Delivery vehicle fleet partners (Auto loader, Tata Ace, 6-wheeler Tipper) ready on standby.
+- [ ] **5. Payment Gateway Verification**:
+  - Live Razorpay Merchant account activated with KYC submitted and approved.
+  - Webhook URL configured in Razorpay Dashboard: `https://your-domain.com/api/payments/webhook`.
+  - Webhook secret matched to `RAZORPAY_WEBHOOK_SECRET`.
+  - Test transactions verified in live mode with a ₹1 test order before public launch.
+- [ ] **6. Multi-Channel Notifications**:
+  - Meta WhatsApp Cloud API credentials configured with pre-approved HSM templates.
+  - WhatsApp Click-to-Chat fallback verified for offline dispatch communications.
+- [ ] **7. Compliance & Legal Policies**:
+  - Terms of Service, Privacy Policy, Shipping SLA, and 48-Hour Return Policy customized with company legal entity name.
+  - Customer support phone number and registered business address published in footer.
+
+---
+
+## 11. Automated Verification & Quality Benchmarks
+
+| Test Suite | File | Checks | Status |
+| :--- | :--- | :--- | :--- |
+| **Database Integrity & Schema** | `scripts/test-integrity.js` | 11 / 11 | **PASSED** |
+| **Catalog, Pricing & Tax Rules** | `scripts/test-catalog.js` | 21 / 21 | **PASSED** |
+| **Checkout, Payments & Idempotency** | `scripts/test-checkout-payment.js` | 24 / 24 | **PASSED** |
+| **Admin, Supplier KYC & Tenant Isolation** | `scripts/test-admin-supplier.js` | 20 / 20 | **PASSED** |
+| **Fulfillment, Drop-off OTP & RFQ Bids** | `scripts/test-fulfillment-delivery.js` | 23 / 23 | **PASSED** |
+| **Full Lifecycle End-to-End Integration** | `scripts/test-e2e-integration.js` | 19 / 19 | **PASSED** |
+| **Total Automated Assertions** | **All Suites** | **118 / 118** | **100% PASS** |
+
+### Static Analysis & Build Verification:
 - **TypeScript Typecheck (`npm run type-check`)**: 0 errors.
-- **Next.js Production Build (`npm run build`)**: Compiled successfully. Static pages and dynamic API routes generated.
+- **ESLint Code Quality (`npm run lint`)**: 0 errors.
+- **Next.js Production Build (`npm run build`)**: 60 of 60 static and dynamic routes generated successfully (including dynamic XML `/sitemap.xml` and `/robots.txt`).

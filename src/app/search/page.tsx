@@ -75,7 +75,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
           {query && (
             <div className="text-center mt-3 text-xs text-slate-500">
-              Showing search results for <span className="font-bold text-slate-900">"{query}"</span> ({result.totalCount} {result.totalCount === 1 ? 'item' : 'items'} found)
+              Showing search results for <span className="font-bold text-slate-900">&ldquo;{query}&rdquo;</span> ({result.totalCount} {result.totalCount === 1 ? 'item' : 'items'} found)
             </div>
           )}
         </div>
@@ -131,10 +131,10 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
               <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
                 <AlertCircle className="w-10 h-10 text-slate-400 mx-auto" />
                 <h3 className="text-base font-bold text-slate-800">
-                  No materials found for "{query}"
+                  No materials found for &ldquo;{query}&rdquo;
                 </h3>
                 <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  Try searching for general terms like "cement", "steel", "tiles", "plumbing", "paints" or check the category catalog.
+                  Try searching for general terms like &quot;cement&quot;, &quot;steel&quot;, &quot;tiles&quot;, &quot;plumbing&quot;, &quot;paints&quot; or check the category catalog.
                 </p>
                 <div className="pt-2">
                   <Link
