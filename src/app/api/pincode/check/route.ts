@@ -1,60 +1,43 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { AYODHYA_REGIONAL_HUBS } from '@/config/brand';
+import { checkDestinationServiceability } from '@/lib/logistics/serviceability';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const pincode = searchParams.get('pincode')?.trim();
+  const subtotalParam = searchParams.get('subtotalPaise');
+  const subtotalPaise = subtotalParam ? parseInt(subtotalParam, 10) : undefined;
 
-  if (!pincode || !/^[1-9][0-9]{5}$/.test(pincode)) {
+  if (!pincode) {
     return NextResponse.json(
-      { serviceable: false, error: 'Please enter a valid 6-digit PIN code' },
+      { serviceable: false, error: 'PIN code query parameter is required' },
       { status: 400 }
     );
   }
 
   try {
-    const supabase = createServerSupabaseClient();
-    const { data, error } = await supabase
-      .from('service_pincodes')
-      .select('pincode, area_name, city, is_serviceable, estimated_delivery_minutes, standard_delivery_fee_paise, express_available, express_delivery_fee_paise')
-      .eq('pincode', pincode)
-      .maybeSingle();
+    const result = await checkDestinationServiceability(pincode, subtotalPaise);
 
-    if (!error && data) {
-      return NextResponse.json({
-        serviceable: data.is_serviceable,
-        pincode: data.pincode,
-        areaName: data.area_name,
-        city: data.city,
-        estimatedDeliveryMinutes: data.estimated_delivery_minutes,
-        standardDeliveryFeePaise: data.standard_delivery_fee_paise,
-        expressAvailable: data.express_available,
-        expressDeliveryFeePaise: data.express_delivery_fee_paise,
-        source: 'database',
-      });
-    }
-
-    // Fallback lookup against configured Ayodhya district hubs if database connection is pending
-    const hub = AYODHYA_REGIONAL_HUBS.find((h) => h.pincode === pincode);
-    if (hub) {
-      return NextResponse.json({
-        serviceable: true,
-        pincode: hub.pincode,
-        areaName: hub.coverage,
-        city: 'Ayodhya',
-        estimatedDeliveryMinutes: hub.slaMinutes,
-        standardDeliveryFeePaise: 19900,
-        expressAvailable: hub.isExpress,
-        expressDeliveryFeePaise: hub.isExpress ? 39900 : 0,
-        source: 'static_ayodhya_registry',
-      });
-    }
-
+    // Maintain backwards compatibility with earlier frontend consumers while providing rich logistics data
     return NextResponse.json({
-      serviceable: false,
-      pincode,
-      message: `Delivery to ${pincode} is not currently active. We currently serve Ayodhya Dham, Faizabad, Darshannagar, Sohawal, and Bikapur.`,
+      serviceable: result.serviceable,
+      pincode: result.pincode,
+      areaName: result.hubLocality,
+      zoneName: result.zoneName,
+      city: 'Ayodhya',
+      isCurrentlyOperating: result.isCurrentlyOperating,
+      operatingHours: result.operatingHours,
+      estimatedDeliveryMinutes: result.estimatedDelivery?.maxMinutes || 90,
+      estimatedDelivery: result.estimatedDelivery,
+      standardDeliveryFeePaise: result.deliveryFees?.standardDeliveryFeePaise ?? 19900,
+      expressAvailable: (result.deliveryFees?.expressDeliveryFeePaise ?? 0) > 0,
+      expressDeliveryFeePaise: result.deliveryFees?.expressDeliveryFeePaise ?? 0,
+      freeDeliveryThresholdPaise: result.deliveryFees?.freeDeliveryThresholdPaise,
+      isFreeDeliveryEligible: result.deliveryFees?.isFreeDeliveryEligible,
+      orderMinimums: result.orderMinimums,
+      deliveryRestrictions: result.deliveryRestrictions || [],
+      maxVehicleCapacity: result.maxVehicleCapacity,
+      unavailableNotice: result.unavailableNotice,
+      message: result.unavailableNotice?.message,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal service error';

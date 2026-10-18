@@ -89,6 +89,7 @@ export interface StoredOrderRecord {
   status_history: Array<{
     id: string;
     order_id: string;
+    status?: OrderStatus | string;
     previous_status: OrderStatus | null;
     new_status: OrderStatus;
     changed_by: string | null;

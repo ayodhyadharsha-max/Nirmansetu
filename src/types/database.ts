@@ -10,14 +10,20 @@ export type OrderStatus =
   | 'draft'
   | 'submitted'
   | 'confirmed'
+  | 'supplier_assigned'
+  | 'supplier_confirmed'
+  | 'supplier_rejected'
+  | 'processing'
   | 'po_issued'
   | 'materials_packed'
+  | 'dispatched'
   | 'out_for_delivery'
   | 'delivered'
+  | 'failed_delivery'
   | 'cancelled'
   | 'refunded';
 export type PaymentStatus = 'pending' | 'authorized' | 'paid' | 'failed' | 'refunded' | 'cod_pending';
-export type PaymentMethod = 'razorpay' | 'cod' | 'neft_rtgs' | 'credit_line';
+export type PaymentMethod = 'razorpay' | 'cod' | 'neft_rtgs' | 'credit_line' | 'bank_transfer';
 export type DiscountType = 'percentage' | 'fixed_paise';
 export type ProjectType =
   | 'residential_house'

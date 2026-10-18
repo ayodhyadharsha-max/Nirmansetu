@@ -14,17 +14,26 @@ import {
   Phone,
   Sparkles,
   ArrowRight,
+  MessageCircle,
+  HardHat,
+  Compass,
+  Palette,
+  Home,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
 import { useCart } from '@/context/CartContext';
 import { BRAND_CONFIG, AYODHYA_REGIONAL_HUBS } from '@/config/brand';
+import { buildWhatsAppClickToChatUrl } from '@/lib/notifications/whatsapp-link';
+
+type PersonaType = 'contractor' | 'builder' | 'architect' | 'interior_designer' | 'homeowner';
 
 export default function BulkEnquiryPage() {
   const { user } = useAuth();
   const { selectedPincode } = useCart();
 
+  const [persona, setPersona] = useState<PersonaType>('contractor');
   const [contactName, setContactName] = useState(user?.fullName || '');
   const [contactPhone, setContactPhone] = useState(user?.phone || '');
   const [contactEmail, setContactEmail] = useState(user?.email || '');
@@ -51,6 +60,26 @@ export default function BulkEnquiryPage() {
     enquiryNumber: string;
     message: string;
   } | null>(null);
+
+  const handlePersonaChange = (newPersona: PersonaType) => {
+    setPersona(newPersona);
+    if (newPersona === 'contractor') {
+      setSelectedMaterials(['Cement (10+ Metric Tons)', 'TMT Rebars Fe 550D (Truckload)', 'Red Kiln Bricks (4,000+ Pcs)']);
+      setProjectType('commercial');
+    } else if (newPersona === 'builder') {
+      setSelectedMaterials(['Cement (10+ Metric Tons)', 'TMT Rebars Fe 550D (Truckload)', 'Structural Waterproofing Chemicals']);
+      setProjectType('commercial');
+    } else if (newPersona === 'architect') {
+      setSelectedMaterials(['TMT Rebars Fe 550D (Truckload)', 'Vitrified Tiles (1,000+ Sq Ft)', 'CPVC/UPVC Pipes (Full Lot)']);
+      setProjectType('infrastructure');
+    } else if (newPersona === 'interior_designer') {
+      setSelectedMaterials(['Vitrified Tiles (1,000+ Sq Ft)', 'Structural Waterproofing Chemicals', 'CPVC/UPVC Pipes (Full Lot)']);
+      setProjectType('residential');
+    } else {
+      setSelectedMaterials(['Cement (10+ Metric Tons)', 'Red Kiln Bricks (4,000+ Pcs)']);
+      setProjectType('residential');
+    }
+  };
 
   const toggleMaterial = (mat: string) => {
     setSelectedMaterials((prev) =>
@@ -168,10 +197,22 @@ export default function BulkEnquiryPage() {
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                <a
+                  href={buildWhatsAppClickToChatUrl(
+                    BRAND_CONFIG.supportPhone,
+                    `Hello NirmanSetu Ayodhya, I have submitted Bulk RFQ ${rfqReceipt.enquiryNumber} for my construction site in PIN ${pincode}. Please share distributor wholesale rates.`
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm rounded-xl transition inline-flex items-center justify-center gap-2 shadow-md"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Connect with Accounts Manager on WhatsApp</span>
+                </a>
                 <Link
                   href="/"
-                  className="px-6 py-3 bg-slate-950 text-amber-400 font-extrabold text-xs sm:text-sm rounded-xl hover:bg-slate-800 transition inline-block shadow-md"
+                  className="w-full sm:w-auto px-6 py-3 bg-slate-950 text-amber-400 font-extrabold text-xs sm:text-sm rounded-xl hover:bg-slate-800 transition inline-block shadow-md text-center"
                 >
                   Return to Storefront
                 </Link>
@@ -181,6 +222,40 @@ export default function BulkEnquiryPage() {
             /* Bulk RFQ Form */
             <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-10 shadow-xl space-y-6">
               
+              {/* Persona Selector Tabs */}
+              <div>
+                <label className="block text-xs font-bold text-slate-900 uppercase tracking-wide mb-2.5">
+                  Select Your Project Persona / Role
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                  {[
+                    { id: 'contractor', label: 'Contractor (ठेकेदार)', icon: HardHat },
+                    { id: 'builder', label: 'Builder / Developer', icon: Building },
+                    { id: 'architect', label: 'Architect / Engineer', icon: Compass },
+                    { id: 'interior_designer', label: 'Interior Designer', icon: Palette },
+                    { id: 'homeowner', label: 'Homeowner (अपना घर)', icon: Home },
+                  ].map((p) => {
+                    const Icon = p.icon;
+                    const isSelected = persona === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handlePersonaChange(p.id as PersonaType)}
+                        className={`p-3 rounded-xl border text-center font-bold transition flex flex-col items-center justify-center gap-1.5 ${
+                          isSelected
+                            ? 'border-amber-500 bg-amber-50 text-amber-950 ring-2 ring-amber-500 shadow-sm'
+                            : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Icon className={`w-5 h-5 ${isSelected ? 'text-amber-600' : 'text-slate-400'}`} />
+                        <span className="text-[11px] leading-tight">{p.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {errorMessage && (
                 <div className="p-3 bg-red-50 text-red-700 text-xs rounded-xl flex items-center gap-2 border border-red-200">
                   <AlertCircle className="w-4 h-4 shrink-0" />
