@@ -703,11 +703,11 @@ SELECT
   v.max_order_qty,
   v.weight_kg,
   v.dimensions_cm,
-  COALESCE(NULLIF(v.selling_price_paise, 0), MIN(sp.selling_price_paise), 0) AS selling_price_paise,
-  COALESCE(NULLIF(v.mrp_paise, 0), MAX(sp.mrp_paise), 0) AS mrp_paise,
-  COALESCE(SUM(CASE WHEN sp.is_available = true THEN sp.stock_quantity ELSE 0 END), 0)::INT AS total_available_stock,
+  COALESCE(NULLIF(v.selling_price_paise, 0), MIN(CASE WHEN s.id IS NOT NULL THEN sp.selling_price_paise ELSE NULL END), 0) AS selling_price_paise,
+  COALESCE(NULLIF(v.mrp_paise, 0), MAX(CASE WHEN s.id IS NOT NULL THEN sp.mrp_paise ELSE NULL END), 0) AS mrp_paise,
+  COALESCE(SUM(CASE WHEN s.id IS NOT NULL AND sp.is_available = true THEN sp.stock_quantity ELSE 0 END), 0)::INT AS total_available_stock,
   CASE
-    WHEN COALESCE(SUM(CASE WHEN sp.is_available = true THEN sp.stock_quantity ELSE 0 END), 0) > 0 THEN true
+    WHEN COALESCE(SUM(CASE WHEN s.id IS NOT NULL AND sp.is_available = true THEN sp.stock_quantity ELSE 0 END), 0) > 0 THEN true
     ELSE false
   END AS is_in_stock,
   p.created_at,
@@ -717,6 +717,7 @@ JOIN public.categories c ON c.id = p.category_id AND c.is_active = true
 LEFT JOIN public.brands b ON b.id = p.brand_id AND b.is_active = true
 JOIN public.product_variants v ON v.product_id = p.id AND v.is_active = true AND v.publication_status = 'published'
 LEFT JOIN public.supplier_products sp ON sp.variant_id = v.id AND sp.is_available = true
+LEFT JOIN public.suppliers s ON s.id = sp.supplier_id AND s.verification_status = 'verified' AND s.is_active = true
 WHERE p.is_active = true AND p.publication_status = 'published'
 GROUP BY
   p.id, p.title, p.slug, p.short_description, p.description, p.hsn_code,

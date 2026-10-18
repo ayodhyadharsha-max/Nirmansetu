@@ -3,7 +3,8 @@
  * NIRMANSETU - Ayodhya Construction Materials Marketplace
  *
  * Usage:
- *   node scripts/seed-database.js
+ *   node scripts/seed-database.js         # Production reference data (supabase/seed.sql)
+ *   node scripts/seed-database.js --demo  # Sandbox demo data (supabase/seed_demo.sql)
  *
  * Requirements:
  *   Valid SUPABASE_DB_URL or NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
@@ -13,57 +14,62 @@
 const fs = require('fs');
 const path = require('path');
 
-console.log('------------------------------------------------------------');
-console.log('NIRMANSETU: AYODHYA DATABASE SEED UTILITY');
-console.log('------------------------------------------------------------');
+const isDemo = process.argv.includes('--demo') || process.env.NODE_ENV === 'development_demo';
+const isPureProduction = process.argv.includes('--production') || process.argv.includes('--prod');
+let targetFile = '../supabase/seed.sql';
+if (isDemo) {
+  targetFile = '../supabase/seed_demo.sql';
+} else if (isPureProduction) {
+  targetFile = '../supabase/seed_production.sql';
+}
+const seedSqlPath = path.resolve(__dirname, targetFile);
 
-// Check for environment configuration
-const envPath = path.resolve(__dirname, '../.env.local');
-const envExamplePath = path.resolve(__dirname, '../.env.example');
-
-let hasEnv = fs.existsSync(envPath) || fs.existsSync(path.resolve(__dirname, '../.env'));
-const seedSqlPath = path.resolve(__dirname, '../supabase/seed.sql');
+console.log('------------------------------------------------------------');
+console.log(`NIRMANSETU: AYODHYA DATABASE SEED UTILITY [Mode: ${isDemo ? 'SANDBOX DEMO' : isPureProduction ? 'PURE ZERO-DEMO PRODUCTION' : 'CANONICAL REFERENCE'}]`);
+console.log('------------------------------------------------------------');
 
 if (!fs.existsSync(seedSqlPath)) {
-  console.error('[ERROR] Seed file not found at:', seedSqlPath);
+  console.error('[ERROR] Target seed file not found at:', seedSqlPath);
   process.exit(1);
 }
 
 const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
 
-console.log(`[INFO] Loaded seed SQL (${seedSql.length} bytes)`);
-console.log('[INFO] Seed contains:');
-console.log('  - 3 Ayodhya & Faizabad Service Zones');
-console.log('  - 5 Operational Pincodes (224123, 224001, 224133, 224122, 224229)');
-console.log('  - 7 Construction Categories (Cement, Steel, Bricks, Waterproofing, Plumbing, Electrical, Paints)');
-console.log('  - 8 Authentic Manufacturer Brands');
-console.log('  - 3 Model Local Partner Suppliers (explicitly labeled DEMO)');
-console.log('  - 5 Core Products & 9 Variants with HSN codes & technical specs');
-console.log('  - 9 Supplier Pricing & Stock Entries (all in integer paise)');
-console.log('  - 2 Promotional Test Coupons');
-console.log('  - Operational Admin Platform Settings');
+console.log(`[INFO] Loaded target SQL: ${path.basename(seedSqlPath)} (${seedSql.length} bytes)`);
+console.log('[INFO] Content summary:');
+console.log('  - 3 Ayodhya & Faizabad Regional Service Zones');
+console.log('  - 5 District Postal Codes (224123, 224001, 224133, 224122, 224229)');
+console.log('  - 9 Core Construction Material Categories (Active)');
+console.log('  - 11 Verified Manufacturer Brands (Active)');
+if (isDemo) {
+  console.log('  - Sandbox demo suppliers (Strictly marked verification_status = "pending")');
+  console.log('  - Draft demo products tagged with is_demo: true');
+  console.log('  - Zero unverified stock or fake GSTINs seeded into live tables');
+} else {
+  console.log('  - Zero fictional suppliers (Suppliers must apply via /supplier-application)');
+  console.log('  - Zero fake GSTINs or mock stock allocations');
+  console.log('  - Master product catalog initialized in "draft" status');
+  console.log('  - Postal zones registered with deliveries inactive until merchant partner onboarding');
+}
 console.log('------------------------------------------------------------');
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !serviceKey || supabaseUrl.includes('your-project-id')) {
-  console.log('[NOTE] Live Supabase credentials are not configured in environment variables.');
-  console.log('[ACTION REQUIRED TO EXECUTE SEED AGAINST A LIVE DATABASE]:');
-  console.log('  1. Create a Supabase project at https://supabase.com');
-  console.log('  2. Copy .env.example to .env.local:');
-  console.log('     cp .env.example .env.local');
-  console.log('  3. In Supabase Dashboard -> SQL Editor, run:');
-  console.log('     - supabase/migrations/schema_full.sql (Creates complete schema & RLS)');
-  console.log('     - supabase/seed.sql (Seeds demo catalog, pincodes, & settings)');
-  console.log('  4. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local.');
+  console.log('[NOTE] Remote Supabase credentials are not configured in environment variables.');
+  console.log('[HOW TO EXECUTE MANUALLY IN SUPABASE DASHBOARD]:');
+  console.log('  1. Open your Supabase Dashboard -> SQL Editor.');
+  console.log('  2. For Production:');
+  console.log('     Run supabase/schema_full.sql, then run supabase/seed.sql.');
+  console.log('  3. For Local Sandbox / Offline Development:');
+  console.log('     Run supabase/schema_full.sql, then run supabase/seed_demo.sql.');
   console.log('------------------------------------------------------------');
-  console.log('[VERIFICATION] Seed file syntax and structures validated successfully.');
+  console.log(`[VERIFICATION] ${path.basename(seedSqlPath)} syntax and structure validated successfully.`);
   process.exit(0);
 }
 
 console.log(`[INFO] Attempting connection to Supabase instance: ${supabaseUrl}`);
-// When credentials are provided, perform live seed via Supabase client
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(supabaseUrl, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -72,7 +78,7 @@ const supabase = createClient(supabaseUrl, serviceKey, {
 async function runSeed() {
   try {
     console.log('[INFO] Checking connection...');
-    const { data, error } = await supabase.from('service_zones').select('count');
+    const { error } = await supabase.from('service_zones').select('count');
     if (error) {
       console.warn('[WARN] Tables may not yet be created. Please execute supabase/schema_full.sql in SQL Editor first.');
       console.warn('Postgres error message:', error.message);
