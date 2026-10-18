@@ -694,3 +694,5 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     updated_at: '2026-10-18T00:00:00Z',
   },
 ];
+
+export const SEED_PRODUCTS = SEED_CATALOG_ITEMS;

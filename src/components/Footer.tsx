@@ -79,6 +79,21 @@ export const Footer: React.FC = () => {
                 </Link>
               </li>
               <li>
+                <Link href="/supplier-application" className="hover:text-amber-400 transition font-medium text-amber-200">
+                  Partner Merchant Application
+                </Link>
+              </li>
+              <li>
+                <Link href="/supplier" className="hover:text-amber-400 transition">
+                  Stockist & Supplier Portal
+                </Link>
+              </li>
+              <li>
+                <Link href="/admin" className="hover:text-amber-400 transition text-slate-400">
+                  Operations & Admin Console
+                </Link>
+              </li>
+              <li>
                 <Link href="/cart" className="hover:text-amber-400 transition">
                   Materials Schedule & Cart
                 </Link>

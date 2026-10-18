@@ -103,8 +103,8 @@ export interface StoredOrderRecord {
 }
 
 // In-memory orders registry for offline testing, seeding and idempotency caching
-const memoryOrders = new Map<string, StoredOrderRecord>();
-const idempotencyRegistry = new Map<string, string>(); // idempotency_key -> order_id
+export const memoryOrders = new Map<string, StoredOrderRecord>();
+export const idempotencyRegistry = new Map<string, string>(); // idempotency_key -> order_id
 
 /**
  * Validates PIN code against Ayodhya serviceability zones.
