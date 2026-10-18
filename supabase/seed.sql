@@ -384,18 +384,21 @@ VALUES (
   25.00
 ) ON CONFLICT (sku) DO UPDATE SET selling_price_paise = EXCLUDED.selling_price_paise;
 
-INSERT INTO public.supplier_products (id, supplier_id, product_id, variant_id, supplier_sku, supplier_cost_paise, is_available, stock_quantity, lead_time_hours)
+INSERT INTO public.supplier_products (id, supplier_id, variant_id, supplier_cost_paise, mrp_paise, selling_price_paise, stock_quantity, min_lead_time_hours, is_available, priority_score)
 VALUES (
   'sp000000-0000-0000-0000-000000000012',
   's0000000-0000-0000-0000-000000000001',
-  'p0000000-0000-0000-0000-000000000011',
   'v0000000-0000-0000-0000-000000000012',
-  'SUP-TATA-WIRON-25KG',
   195000, -- Private cost ₹1,950
-  true,
+  240000, -- MRP ₹2,400
+  215000, -- Selling ₹2,150
   150,
-  2
-) ON CONFLICT (supplier_id, variant_id) DO NOTHING;
+  2,
+  true,
+  10
+) ON CONFLICT (supplier_id, variant_id) DO UPDATE SET
+  selling_price_paise = EXCLUDED.selling_price_paise,
+  stock_quantity = EXCLUDED.stock_quantity;
 
 -- Category 9: Kitchen & Home Improvement
 INSERT INTO public.products (id, category_id, brand_id, title, slug, short_description, description, hsn_code, unit_of_measure, publication_status, tax_rate_pct, specifications, images)
