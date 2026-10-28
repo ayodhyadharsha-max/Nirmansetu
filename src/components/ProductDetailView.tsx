@@ -17,6 +17,9 @@ import {
   Building,
   Package,
   Heart,
+  Maximize2,
+  X,
+  ChevronLeft,
 } from 'lucide-react';
 import { PublicCatalogItem } from '@/types/database';
 import { formatPaiseToRupees } from '@/lib/money';
@@ -111,6 +114,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   const [quantity, setQuantity] = useState(product.min_order_qty || 1);
   const [selectedPincode, setSelectedPincode] = useState(cart.selectedPincode || '224123');
   const [isAdded, setIsAdded] = useState(false);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
   const unitInfo = formatUnitAndMinOrder(product.unit_of_measure, product.min_order_qty);
 
@@ -197,24 +201,35 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
         {/* Left Column: Image Gallery */}
         <div className="lg:col-span-6 space-y-4">
           {/* Main Large Image */}
-          <div className="relative aspect-4/3 w-full bg-white rounded-3xl overflow-hidden border border-slate-200/90 shadow-sm flex items-center justify-center p-6">
+          <div
+            onClick={() => setIsLightboxOpen(true)}
+            className="relative aspect-4/3 w-full bg-white rounded-3xl overflow-hidden border border-slate-200/90 shadow-sm flex items-center justify-center p-6 cursor-zoom-in group"
+          >
             <img
               src={images[selectedImageIndex] || images[0]}
               alt={product.product_title}
               onError={(e) => {
                 (e.target as HTMLImageElement).src = '/images/products/ultratech_cement.png';
               }}
-              className="max-h-full max-w-full object-contain drop-shadow-xs"
+              className="max-h-full max-w-full object-contain drop-shadow-xs group-hover:scale-105 transition-transform duration-300"
             />
             {discountPct > 0 && (
               <span className="absolute top-4 left-4 bg-[#f5b800] text-slate-950 text-xs font-black px-2.5 py-1 rounded-full shadow-2xs">
                 {discountPct}% OFF
               </span>
             )}
+            {/* Click to expand pill badge */}
+            <div className="absolute bottom-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-slate-800 text-xs font-bold shadow-xs border border-slate-200/80 transition opacity-90 group-hover:opacity-100">
+              <Maximize2 className="w-3.5 h-3.5 text-slate-700" />
+              <span>Click to view full photo</span>
+            </div>
             {/* Wishlist Heart Toggle */}
             <button
               type="button"
-              onClick={() => toggleWishlist(product)}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleWishlist(product);
+              }}
               aria-label={wishlisted ? 'Remove from wishlist' : 'Save to wishlist'}
               className="absolute top-4 right-4 z-10 p-2.5 rounded-full bg-white/95 hover:bg-white text-slate-400 hover:text-red-500 shadow-md transition cursor-pointer"
             >
@@ -525,6 +540,86 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             {relatedProducts.slice(0, 3).map((item) => (
               <ProductCard key={item.product_id} product={item} onAddToCart={onAddToCart} />
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Full-Screen Image Lightbox Modal */}
+      {isLightboxOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6"
+          onClick={() => setIsLightboxOpen(false)}
+        >
+          <div
+            className="relative max-w-4xl w-full max-h-[92vh] bg-white rounded-3xl p-4 sm:p-6 flex flex-col items-center justify-between shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Bar with Title and Close Button */}
+            <div className="w-full flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+              <div className="font-extrabold text-sm sm:text-base text-slate-900 truncate pr-4">
+                {product.product_title}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLightboxOpen(false)}
+                className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
+                aria-label="Close photo preview"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Main Enlarged Image with Next/Prev Controls */}
+            <div className="relative w-full flex-1 flex items-center justify-center min-h-[300px] max-h-[65vh] p-2 overflow-hidden">
+              {images.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedImageIndex((prev) => (prev > 0 ? prev - 1 : images.length - 1))}
+                  className="absolute left-2 z-10 p-2.5 rounded-full bg-white/90 hover:bg-white shadow-lg text-slate-800 transition cursor-pointer"
+                  aria-label="Previous photo"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              )}
+
+              <img
+                src={images[selectedImageIndex] || images[0]}
+                alt={product.product_title}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = '/images/products/ultratech_cement.png';
+                }}
+                className="max-h-[60vh] max-w-full object-contain drop-shadow-md transition-all select-none"
+              />
+
+              {images.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedImageIndex((prev) => (prev < images.length - 1 ? prev + 1 : 0))}
+                  className="absolute right-2 z-10 p-2.5 rounded-full bg-white/90 hover:bg-white shadow-lg text-slate-800 transition cursor-pointer"
+                  aria-label="Next photo"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+
+            {/* Bottom Thumbnail Strip */}
+            {images.length > 1 && (
+              <div className="flex items-center gap-2 overflow-x-auto pt-3 border-t border-slate-100 w-full justify-center">
+                {images.map((img, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedImageIndex(idx)}
+                    className={`w-16 h-12 rounded-lg overflow-hidden border-2 transition cursor-pointer ${
+                      selectedImageIndex === idx ? 'border-amber-500 scale-105 shadow-sm' : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <img src={img} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -306,6 +306,22 @@ export async function getProductBySlug(slug: string): Promise<PublicCatalogItem 
     return seedItem;
   }
 
+  // Check seed items with fuzzy/relaxed word matching
+  const relaxedSeed = SEED_CATALOG_ITEMS.find((s) => {
+    const sTokens = s.product_slug.split('-').filter(Boolean);
+    const cTokens = cleanSlug.split('-').filter(Boolean);
+    const overlap = sTokens.filter((t) => cTokens.includes(t));
+    return (
+      s.product_slug.startsWith(cleanSlug) ||
+      cleanSlug.startsWith(s.product_slug) ||
+      (overlap.length >= 3 && sTokens[0] === cTokens[0])
+    );
+  });
+  if (relaxedSeed) {
+    productSlugCache.set(cleanSlug, { data: relaxedSeed, expiresAt: now + 60000 });
+    return relaxedSeed;
+  }
+
   const catItem = ALL_HOMERUN_PRODUCTS.find(
     (p) => p.slug === cleanSlug || p.id === cleanSlug || p.altSlugs?.includes(cleanSlug)
   );
