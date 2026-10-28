@@ -21,6 +21,8 @@ import { PublicCatalogItem } from '@/types/database';
 import { formatPaiseToRupees, calculateOrderTotals } from '@/lib/money';
 import { AYODHYA_REGIONAL_HUBS } from '@/config/brand';
 import { useCart, CartLine } from '@/context/CartContext';
+import { useAuth } from '@/context/AuthContext';
+import { getBrowserAuthHeaders } from '@/lib/auth/client-auth';
 
 interface CartDrawerProps {
   isOpen?: boolean;
@@ -42,20 +44,23 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
   const onRemoveItem = props.onRemoveItem || globalCart.removeItem;
   const selectedPincode = props.selectedPincode || globalCart.selectedPincode;
   const onClearCart = props.onClearCart || globalCart.clearCart;
+  const { user } = useAuth();
 
-  const [recipientName, setRecipientName] = useState('');
-  const [recipientPhone, setRecipientPhone] = useState('');
+  const [recipientName, setRecipientName] = useState(user?.fullName || '');
+  const [recipientPhone, setRecipientPhone] = useState(user?.phone || '');
   const [streetAddress, setStreetAddress] = useState('');
   const [landmark, setLandmark] = useState('');
   const [unloadingInstructions, setUnloadingInstructions] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod' | 'neft_rtgs'>('cod');
   const [isExpress, setIsExpress] = useState(false);
 
+  const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderReceipt, setOrderReceipt] = useState<{
     orderNumber: string;
     totalPaise: number;
-    deliveryOtp: string;
+    deliveryOtp: string | null;
+    deliveryOtpNotice?: string;
     message: string;
   } | null>(null);
 
@@ -81,51 +86,96 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (lines.length === 0) return;
+    setFormError(null);
+
+    if (lines.length === 0) {
+      setFormError('Your cart is empty. Please add building materials before ordering.');
+      return;
+    }
+
+    const cleanedName = recipientName.trim();
+    let cleanedPhone = recipientPhone.trim().replace(/[\s\-\(\)]/g, '');
+    if (cleanedPhone.startsWith('+91')) cleanedPhone = cleanedPhone.slice(3);
+    else if (cleanedPhone.startsWith('91') && cleanedPhone.length === 12) cleanedPhone = cleanedPhone.slice(2);
+    else if (cleanedPhone.startsWith('0') && cleanedPhone.length === 11) cleanedPhone = cleanedPhone.slice(1);
+
+    const cleanedAddress = streetAddress.trim();
+
+    if (!cleanedName || cleanedName.length < 2) {
+      setFormError('Please enter Receiver / Site Engineer Name (at least 2 characters).');
+      return;
+    }
+    if (!/^[6-9]\d{9}$/.test(cleanedPhone)) {
+      setFormError('Please enter a valid 10-digit Indian site mobile number starting with 6, 7, 8, or 9.');
+      return;
+    }
+    if (!cleanedAddress || cleanedAddress.length < 5) {
+      setFormError('Please enter a valid site delivery address (at least 5 characters).');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const payload = {
-        cartId: 'c0000000-0000-0000-0000-000000000001',
+        idempotencyKey: `idem_cart_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        cartId: globalCart.sessionToken || 'c0000000-0000-0000-0000-000000000001',
         pincode: selectedPincode,
         paymentMethod,
         isExpressDelivery: isExpress,
-        inlineAddress: {
-          addressType: 'site',
-          siteOrPersonName: recipientName || 'Ayodhya Project Site',
-          contactPhone: recipientPhone || '9450000000',
-          streetAddress: streetAddress || 'Near Naya Ghat, Ayodhya Dham',
-          landmark: landmark || 'Opposite Mandir corridor',
+        items: lines.map((l) => ({
+          variantId: l.item.variant_id,
+          quantity: l.quantity,
+        })),
+        customerDetails: {
+          name: cleanedName,
+          phone: cleanedPhone,
+          email: '',
+          companyName: '',
+          gstin: '',
+        },
+        deliveryAddress: {
+          addressType: 'site' as const,
+          siteOrPersonName: cleanedName,
+          contactPhone: cleanedPhone,
+          streetAddress: cleanedAddress,
+          landmark: landmark.trim() || undefined,
           pincode: selectedPincode,
           city: 'Ayodhya',
           state: 'Uttar Pradesh',
-          unloadingInstructions: unloadingInstructions || 'Require unloading near site entrance',
+          unloadingInstructions: unloadingInstructions.trim() || undefined,
           hasTruckAccess: true,
-          isDefault: false,
         },
       };
 
+      const authHeaders = await getBrowserAuthHeaders();
       const res = await fetch('/api/orders/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          ...payload,
+          userId: user?.id,
+        }),
       });
 
       const data = await res.json();
-      if (!res.ok) {
+      if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to place order');
       }
 
       setOrderReceipt({
         orderNumber: data.orderNumber || data.summary?.orderNumber,
         totalPaise: data.totalPaise || totals.totalPaise,
-        deliveryOtp: data.deliveryOtp || data.summary?.deliveryOtp || '4192',
+        deliveryOtp: data.deliveryOtp || null,
+        deliveryOtpNotice: data.deliveryOtpNotice,
         message: data.message || 'Order successfully scheduled for local partner dispatch.',
       });
       onClearCart();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Network failure';
-      alert(`Checkout error: ${message}`);
+      setFormError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -175,10 +225,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
                 <span className="text-slate-500">Total Payable:</span>
                 <span className="font-bold text-emerald-700">{formatPaiseToRupees(orderReceipt.totalPaise)}</span>
               </div>
-              <div className="flex justify-between text-xs pt-2 border-t border-slate-200">
-                <span className="text-slate-700 font-bold">Site Dropoff OTP:</span>
-                <span className="font-mono font-black text-sm text-amber-700 tracking-wider">
-                  {orderReceipt.deliveryOtp}
+              <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-200">
+                <span className="text-slate-700 font-bold">Site Dropoff PIN:</span>
+                <span className="font-mono font-black text-xs text-amber-700">
+                  {orderReceipt.deliveryOtp || 'Dispatched via SMS'}
                 </span>
               </div>
             </div>
@@ -288,12 +338,25 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
                     </Link>
                   </div>
 
+                  {formError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-start gap-2 animate-in fade-in">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                      <div>
+                        <p className="font-bold">Required correction:</p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed">{formError}</p>
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <input
                       type="text"
                       placeholder="Receiver / Site Engineer Name *"
                       value={recipientName}
-                      onChange={(e) => setRecipientName(e.target.value)}
+                      onChange={(e) => {
+                        setRecipientName(e.target.value);
+                        if (formError) setFormError(null);
+                      }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500"
                     />
                   </div>
@@ -303,7 +366,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
                       type="tel"
                       placeholder="Site Mobile Number (10 Digits) *"
                       value={recipientPhone}
-                      onChange={(e) => setRecipientPhone(e.target.value)}
+                      onChange={(e) => {
+                        setRecipientPhone(e.target.value);
+                        if (formError) setFormError(null);
+                      }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500"
                     />
                   </div>
@@ -313,7 +379,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
                       type="text"
                       placeholder="Plot No / Street Address / Site Landmark *"
                       value={streetAddress}
-                      onChange={(e) => setStreetAddress(e.target.value)}
+                      onChange={(e) => {
+                        setStreetAddress(e.target.value);
+                        if (formError) setFormError(null);
+                      }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500"
                     />
                   </div>
@@ -323,7 +392,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
                       type="text"
                       placeholder="Unloading instructions (e.g. narrow lane, tempo only)"
                       value={unloadingInstructions}
-                      onChange={(e) => setUnloadingInstructions(e.target.value)}
+                      onChange={(e) => {
+                        setUnloadingInstructions(e.target.value);
+                        if (formError) setFormError(null);
+                      }}
                       className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500"
                     />
                   </div>
@@ -349,15 +421,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
 
                       <button
                         type="button"
-                        onClick={() => setPaymentMethod('razorpay')}
-                        className={`p-2.5 rounded-xl border text-left font-semibold transition ${
-                          paymentMethod === 'razorpay'
-                            ? 'border-amber-500 bg-amber-50/50 text-slate-900 ring-1 ring-amber-500'
-                            : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                        }`}
+                        disabled
+                        className="p-2.5 rounded-xl border border-slate-200 bg-slate-100/70 text-left font-semibold cursor-not-allowed opacity-75"
                       >
-                        <div className="font-bold">Online Prepaid</div>
-                        <div className="text-[10px] text-slate-500">UPI / Cards / Netbanking</div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-700">Online Prepaid</span>
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Setup in Progress</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500">Gateway KYC underway — Use COD</div>
                       </button>
                     </div>
                   </div>

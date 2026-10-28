@@ -53,7 +53,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           <div className="lg:col-span-7 space-y-5">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-900 text-amber-400 rounded-lg text-xs font-bold tracking-wide uppercase">
               <Clock className="w-3.5 h-3.5 text-amber-400" />
-              <span>Rapid Site Delivery • 60 to 120 Mins</span>
+              <span>Local Jobsite Delivery in Ayodhya Dham</span>
             </div>
 
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-950 tracking-tight leading-[1.15]">
@@ -82,7 +82,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
                   type="submit"
                   className="px-4 py-2 bg-slate-950 hover:bg-slate-800 text-amber-400 text-xs sm:text-sm font-bold rounded-xl transition flex items-center gap-1.5"
                 >
-                  <span>Check SLA</span>
+                  <span>Check Delivery</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </form>
@@ -99,8 +99,8 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
               <div className="flex items-center gap-2 p-2.5 rounded-xl bg-white border border-slate-200">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                 <div className="text-[11px] leading-tight">
-                  <div className="font-bold text-slate-900">100% Genuine</div>
-                  <div className="text-slate-500">QR & Batch Verified</div>
+                  <div className="font-bold text-slate-900">Quality Assured</div>
+                  <div className="text-slate-500">Inspected on Delivery</div>
                 </div>
               </div>
 
@@ -124,7 +124,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
                 <FileText className="w-4 h-4 text-teal-600 shrink-0" />
                 <div className="text-[11px] leading-tight">
                   <div className="font-bold text-slate-900">GST Invoice</div>
-                  <div className="text-slate-500">Input Tax Credit</div>
+                  <div className="text-slate-500">Statutory Tax Invoices</div>
                 </div>
               </div>
             </div>
@@ -165,8 +165,8 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
               <div className="mt-6 pt-5 border-t border-slate-800 flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] text-slate-400">Response SLA</div>
-                  <div className="text-xs font-bold text-emerald-400">Within 2 Hours</div>
+                  <div className="text-[11px] text-slate-400">Response</div>
+                  <div className="text-xs font-bold text-emerald-400">Same-Day Quotation</div>
                 </div>
                 <button
                   onClick={onOpenEnquiry}

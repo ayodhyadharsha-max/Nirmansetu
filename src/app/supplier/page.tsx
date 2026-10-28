@@ -15,18 +15,22 @@ import {
   RefreshCw,
   Plus,
   Save,
-  Send,
-  Eye,
   Lock,
+  Loader2,
+  AlertCircle,
+  Phone,
+  User,
+  MapPin,
 } from 'lucide-react';
+import { Header } from '@/components/Header';
+import { Footer } from '@/components/Footer';
+import { useAuth } from '@/context/AuthContext';
 import { BRAND_CONFIG, AYODHYA_REGIONAL_HUBS } from '@/config/brand';
 import { StoredSupplier, StoredSupplierProduct, StoredSupplierPo } from '@/lib/suppliers/service';
 
 export default function SupplierPortalPage() {
+  const { user, isLoading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'inventory' | 'orders' | 'profile'>('overview');
-  
-  // Active demo/authenticated supplier ID
-  const [selectedSupplierId, setSelectedSupplierId] = useState('s0000000-0000-0000-0000-000000000001');
   
   const [supplier, setSupplier] = useState<StoredSupplier | null>(null);
   const [products, setProducts] = useState<StoredSupplierProduct[]>([]);
@@ -35,9 +39,23 @@ export default function SupplierPortalPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Supplier Onboarding Form State (for authenticated users with no depot profile)
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingForm, setOnboardingForm] = useState({
+    businessName: '',
+    contactPerson: user?.fullName || '',
+    phone: user?.phone || '',
+    email: user?.email || '',
+    streetAddress: '',
+    landmark: '',
+    pincode: '224123',
+    gstin: '',
+    pan: '',
+  });
+
   // New product stock form
   const [newStock, setNewStock] = useState({
-    variantId: 'v0000000-0000-0000-0000-000000000001',
+    variantId: 'e0000000-0000-0000-0000-000000000001',
     supplierCostRupees: '350',
     stockQuantity: '200',
     leadTimeHours: '2',
@@ -55,19 +73,20 @@ export default function SupplierPortalPage() {
     landmark: '',
   });
 
-  // Fetch supplier details, products and POs
-  const fetchPortalData = async (supId = selectedSupplierId) => {
+  // Fetch real supplier details, products and POs for authenticated merchant
+  const fetchPortalData = async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setNotice(null);
     try {
       // 1. Fetch Profile
-      const resProfile = await fetch(`/api/supplier/profile?supplierId=${supId}`, {
-        headers: {
-          'x-test-role': 'supplier',
-          'x-test-supplier-id': supId,
-        },
-      });
+      const resProfile = await fetch(`/api/supplier/profile?userId=${encodeURIComponent(user.id)}`);
       const dataProfile = await resProfile.json();
+
       if (dataProfile.success && dataProfile.supplier) {
         setSupplier(dataProfile.supplier);
         setProfileForm({
@@ -78,57 +97,98 @@ export default function SupplierPortalPage() {
           streetAddress: dataProfile.supplier.street_address || '',
           landmark: dataProfile.supplier.landmark || '',
         });
-      }
 
-      // 2. Fetch Products
-      const resProducts = await fetch(`/api/supplier/products?supplierId=${supId}`, {
-        headers: {
-          'x-test-role': 'supplier',
-          'x-test-supplier-id': supId,
-        },
-      });
-      const dataProducts = await resProducts.json();
-      if (dataProducts.success) {
-        setProducts(dataProducts.products || []);
-      }
+        const supId = dataProfile.supplier.id;
 
-      // 3. Fetch POs
-      const resPos = await fetch(`/api/supplier/purchase-orders?supplierId=${supId}`, {
-        headers: {
-          'x-test-role': 'supplier',
-          'x-test-supplier-id': supId,
-        },
-      });
-      const dataPos = await resPos.json();
-      if (dataPos.success) {
-        setPurchaseOrders(dataPos.purchaseOrders || []);
+        // 2. Fetch Products
+        const resProducts = await fetch(`/api/supplier/products?supplierId=${supId}`);
+        const dataProducts = await resProducts.json();
+        if (dataProducts.success) {
+          setProducts(dataProducts.products || []);
+        }
+
+        // 3. Fetch POs
+        const resPos = await fetch(`/api/supplier/purchase-orders?supplierId=${supId}`);
+        const dataPos = await resPos.json();
+        if (dataPos.success) {
+          setPurchaseOrders(dataPos.purchaseOrders || []);
+        }
+      } else {
+        setSupplier(null);
       }
-    } catch (err: any) {
-      setNotice({ type: 'error', message: err.message || 'Failed to fetch portal records' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch portal records';
+      setNotice({ type: 'error', message: msg });
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPortalData(selectedSupplierId);
-  }, [selectedSupplierId]);
+    if (!authLoading) {
+      fetchPortalData();
+    }
+  }, [user?.id, authLoading]);
+
+  // Handle Supplier Registration / Onboarding
+  const handleOnboardingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    setNotice(null);
+
+    try {
+      const res = await fetch('/api/supplier/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessName: onboardingForm.businessName.trim(),
+          contactPerson: onboardingForm.contactPerson.trim(),
+          phone: (onboardingForm.phone || user?.phone || '').replace(/\D/g, '').slice(-10),
+          email: (onboardingForm.email || `${user?.phone || 'merchant'}@nirmansetu.in`).trim(),
+          streetAddress: onboardingForm.streetAddress.trim(),
+          landmark: onboardingForm.landmark.trim() || undefined,
+          city: 'Ayodhya',
+          pincode: onboardingForm.pincode.trim(),
+          state: 'Uttar Pradesh',
+          gstin: onboardingForm.gstin.trim() || undefined,
+          pan: onboardingForm.pan.trim() || undefined,
+          serviceablePincodes: [onboardingForm.pincode.trim()],
+          categoryInterests: ['Cement & Construction Materials'],
+          deliveryCapacity: ['tata_ace'],
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to submit merchant registration');
+      }
+
+      setNotice({
+        type: 'success',
+        message: 'Depot registered! Verification request submitted to operations admin. You can now configure stock.',
+      });
+      setShowOnboarding(false);
+      fetchPortalData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error submitting registration';
+      setNotice({ type: 'error', message: msg });
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // Handle Profile Update
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!supplier) return;
     setActionLoading(true);
     setNotice(null);
     try {
       const res = await fetch('/api/supplier/profile', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-test-role': 'supplier',
-          'x-test-supplier-id': selectedSupplierId,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          supplierId: selectedSupplierId,
+          supplierId: supplier.id,
           ...profileForm,
         }),
       });
@@ -138,48 +198,47 @@ export default function SupplierPortalPage() {
       }
       setNotice({ type: 'success', message: 'Supplier profile updated successfully.' });
       if (data.supplier) setSupplier(data.supplier);
-    } catch (err: any) {
-      setNotice({ type: 'error', message: err.message });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error updating profile';
+      setNotice({ type: 'error', message: msg });
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Handle Product Stock Submission
+  // Handle Stock Update
   const handleStockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!supplier) return;
     setActionLoading(true);
     setNotice(null);
     try {
       const costPaise = Math.round(parseFloat(newStock.supplierCostRupees) * 100);
+      const stockQty = parseInt(newStock.stockQuantity, 10);
+      const leadTime = parseInt(newStock.leadTimeHours, 10);
+
       const res = await fetch('/api/supplier/products', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-test-role': 'supplier',
-          'x-test-supplier-id': selectedSupplierId,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          supplierId: selectedSupplierId,
+          supplierId: supplier.id,
           variantId: newStock.variantId,
           supplierCostPaise: costPaise,
-          stockQuantity: parseInt(newStock.stockQuantity, 10),
-          leadTimeHours: parseInt(newStock.leadTimeHours, 10),
+          stockQuantity: stockQty,
+          minLeadTimeHours: leadTime,
           supplierSku: newStock.supplierSku,
           isAvailable: newStock.isAvailable,
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to submit stock update');
+        throw new Error(data.error || 'Failed to update stock');
       }
-      setNotice({
-        type: 'success',
-        message: 'Inventory wholesale cost & stock submitted. Awaiting administrator catalog sync.',
-      });
-      fetchPortalData(selectedSupplierId);
-    } catch (err: any) {
-      setNotice({ type: 'error', message: err.message });
+      setNotice({ type: 'success', message: 'Stock quantity and wholesale rate recorded.' });
+      fetchPortalData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error updating stock';
+      setNotice({ type: 'error', message: msg });
     } finally {
       setActionLoading(false);
     }
@@ -187,18 +246,15 @@ export default function SupplierPortalPage() {
 
   // Handle PO status update
   const handlePoStatusUpdate = async (poId: string, status: string, notes?: string) => {
+    if (!supplier) return;
     setActionLoading(true);
     setNotice(null);
     try {
       const res = await fetch(`/api/supplier/purchase-orders/${poId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-test-role': 'supplier',
-          'x-test-supplier-id': selectedSupplierId,
-        },
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          supplierId: selectedSupplierId,
+          supplierId: supplier.id,
           status,
           notes: notes || `Status updated to ${status} via Supplier Portal`,
         }),
@@ -208,14 +264,234 @@ export default function SupplierPortalPage() {
         throw new Error(data.error || 'Failed to update PO status');
       }
       setNotice({ type: 'success', message: `PO status changed to ${status}.` });
-      fetchPortalData(selectedSupplierId);
-    } catch (err: any) {
-      setNotice({ type: 'error', message: err.message });
+      fetchPortalData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error updating PO status';
+      setNotice({ type: 'error', message: msg });
     } finally {
       setActionLoading(false);
     }
   };
 
+  // 1. UNAUTHENTICATED STATE: Render clean merchant sign-in gate
+  if (!user && !authLoading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+        <Header />
+        <main className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 p-8 shadow-xl text-center space-y-6">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center mx-auto shadow-md">
+              <Building2 className="w-7 h-7" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-2xl font-black text-slate-950">Ayodhya Stockist Partner Portal</h1>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Direct wholesale fulfilment console for approved building materials dealers, brick kilns, steel stockists, and hardware distributors.
+              </p>
+            </div>
+
+            <div className="pt-2 flex flex-col gap-3">
+              <Link
+                href="/login?redirect=/supplier"
+                className="py-3 px-4 bg-slate-950 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md"
+              >
+                <Phone className="w-4 h-4 text-amber-400" />
+                <span>Sign In with Merchant Mobile Number</span>
+              </Link>
+              <Link
+                href="/register?redirect=/supplier"
+                className="py-3 px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs transition flex items-center justify-center gap-2"
+              >
+                <span>Register New Depot Account</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] text-slate-400">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Ayodhya Municipal Corporation &amp; District Service Area</span>
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // 2. AUTHENTICATED BUT NO SUPPLIER PROFILE FOUND: Render honest onboarding form
+  if (user && !supplier && !loading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+        <Header />
+        <main className="flex-1 max-w-2xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm space-y-6">
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center mx-auto shadow-md">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <h1 className="text-xl font-black text-slate-950">Register Your Building Materials Depot</h1>
+              <p className="text-xs text-slate-500">
+                Signed in as <strong className="text-slate-800">{user.fullName}</strong> ({user.phone}). Register your physical depot details in Ayodhya to begin receiving site purchase orders.
+              </p>
+            </div>
+
+            {notice && (
+              <div
+                className={`p-3 rounded-xl text-xs ${
+                  notice.type === 'success'
+                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                    : 'bg-red-50 border border-red-200 text-red-900'
+                }`}
+              >
+                {notice.message}
+              </div>
+            )}
+
+            <form onSubmit={handleOnboardingSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Business / Firm Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Awadh Building Material Traders"
+                  value={onboardingForm.businessName}
+                  onChange={(e) => setOnboardingForm({ ...onboardingForm, businessName: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Contact Person Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={onboardingForm.contactPerson}
+                    onChange={(e) => setOnboardingForm({ ...onboardingForm, contactPerson: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Contact Phone Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={onboardingForm.phone}
+                    onChange={(e) => setOnboardingForm({ ...onboardingForm, phone: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Depot / Shop Physical Address <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  placeholder="Shop No., Road Name, Colony / Ward"
+                  value={onboardingForm.streetAddress}
+                  onChange={(e) => setOnboardingForm({ ...onboardingForm, streetAddress: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Nearby Landmark
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Near Hanumangarhi Crossing"
+                    value={onboardingForm.landmark}
+                    onChange={(e) => setOnboardingForm({ ...onboardingForm, landmark: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Ayodhya PIN Code <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={onboardingForm.pincode}
+                    onChange={(e) => setOnboardingForm({ ...onboardingForm, pincode: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white focus:outline-none focus:border-amber-500 font-bold"
+                  >
+                    {AYODHYA_REGIONAL_HUBS.map((h) => (
+                      <option key={h.pincode} value={h.pincode}>
+                        {h.pincode} — {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    GSTIN (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={15}
+                    placeholder="09AAAAA0000A1Z5"
+                    value={onboardingForm.gstin}
+                    onChange={(e) => setOnboardingForm({ ...onboardingForm, gstin: e.target.value.toUpperCase() })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-amber-500 uppercase"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    PAN (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={10}
+                    placeholder="ABCDE1234F"
+                    value={onboardingForm.pan}
+                    onChange={(e) => setOnboardingForm({ ...onboardingForm, pan: e.target.value.toUpperCase() })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-amber-500 uppercase"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={actionLoading}
+                className="w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-slate-950 font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-md cursor-pointer mt-4"
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Submitting Registration...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Submit Depot Registration</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // 3. AUTHENTICATED SUPPLIER PORTAL: Render genuine database-connected merchant console
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -226,8 +502,12 @@ export default function SupplierPortalPage() {
             <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
               <Building2 className="w-4 h-4" />
               <span>Ayodhya Stockist Partner Portal</span>
-              <span>•</span>
-              <span className="text-slate-400 font-mono text-[11px]">{selectedSupplierId}</span>
+              {supplier?.gstin && (
+                <>
+                  <span>•</span>
+                  <span className="text-slate-400 font-mono text-[11px]">GST: {supplier.gstin}</span>
+                </>
+              )}
             </div>
             <h1 className="text-2xl font-black tracking-tight text-white">
               {supplier?.business_name || 'Stockist Depot Portal'}
@@ -237,23 +517,11 @@ export default function SupplierPortalPage() {
             </p>
           </div>
 
-          {/* Verification Badge & Switcher for Testing */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          {/* Genuine Verification Badge */}
+          {supplier && (
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400">Switch Merchant:</span>
-              <select
-                value={selectedSupplierId}
-                onChange={(e) => setSelectedSupplierId(e.target.value)}
-                className="text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
-              >
-                <option value="s0000000-0000-0000-0000-000000000001">Awadh Material Mart (Verified)</option>
-                <option value="s0000000-0000-0000-0000-000000000002">Ramrajya Depot (Verified)</option>
-              </select>
-            </div>
-
-            {supplier && (
               <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
                   supplier.verification_status === 'verified'
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                     : supplier.verification_status === 'pending'
@@ -268,8 +536,8 @@ export default function SupplierPortalPage() {
                 )}
                 <span className="capitalize">{supplier.verification_status} Status</span>
               </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Status Notice Banner if Pending */}
@@ -277,7 +545,7 @@ export default function SupplierPortalPage() {
           <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <strong className="font-bold">Account Verification Pending:</strong> Your GSTIN/PAN and physical depot location are currently undergoing review by the platform administrator. Wholesale pricing and stock updates submitted now will be staged and activated immediately upon formal approval.
+              <strong className="font-bold">Account Verification Pending:</strong> Your depot details and location are currently under review by the operations administrator. Wholesale inventory rates submitted now will be activated immediately upon formal verification.
             </div>
           </div>
         )}
@@ -359,17 +627,17 @@ export default function SupplierPortalPage() {
                 {supplier?.commission_rate_pct || 4.5}%
               </div>
               <p className="text-[11px] text-slate-500">
-                Admin negotiated rate (Zero upfront listing fee)
+                Standard platform commission (Zero upfront listing fee)
               </p>
             </div>
 
             <div className="md:col-span-3 p-6 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-4">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Truck className="w-4 h-4 text-amber-600" />
-                <span>Logistics & Regional Delivery Hubs</span>
+                <span>Logistics &amp; Regional Delivery Hubs</span>
               </h3>
               <div className="flex flex-wrap gap-2 text-xs">
-                {(supplier?.metadata?.serviceablePincodes as string[] || ['224123', '224001']).map((pin) => (
+                {(supplier?.metadata?.serviceablePincodes as string[] || [supplier?.pincode || '224123']).map((pin) => (
                   <span
                     key={pin}
                     className="px-3 py-1 rounded-full bg-slate-100 text-slate-800 font-semibold border border-slate-200"
@@ -379,8 +647,8 @@ export default function SupplierPortalPage() {
                 ))}
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Registered transport capacity: {(supplier?.metadata?.deliveryCapacity as string[] || ['Tata Ace']).join(', ')}.
-                When an order in your serviceable hub is confirmed, a Purchase Order is dispatched with customer site coordinates and delivery OTP.
+                Registered transport capacity: {(supplier?.metadata?.deliveryCapacity as string[] || ['Commercial Truck']).join(', ')}.
+                When an order in your serviceable hub is confirmed, a Purchase Order is dispatched with customer site coordinates and Drop-off OTP.
               </p>
             </div>
           </div>
@@ -397,7 +665,7 @@ export default function SupplierPortalPage() {
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <Plus className="w-4 h-4 text-amber-600" />
-                  <span>Update Stock Level & Wholesale Rate</span>
+                  <span>Update Stock Level &amp; Wholesale Rate</span>
                 </h3>
                 <span className="text-[11px] text-slate-500 flex items-center gap-1">
                   <Lock className="w-3.5 h-3.5 text-amber-600" /> Private wholesale rate (Not visible to buyers)
@@ -414,10 +682,10 @@ export default function SupplierPortalPage() {
                     onChange={(e) => setNewStock({ ...newStock, variantId: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
                   >
-                    <option value="v0000000-0000-0000-0000-000000000001">UltraTech Super PPC Cement (50kg)</option>
-                    <option value="v0000000-0000-0000-0000-000000000002">Tata Tiscon 550D TMT Rebar (12mm)</option>
-                    <option value="v0000000-0000-0000-0000-000000000003">Kajaria Polished Glazed Tiles (600x1200mm)</option>
-                    <option value="v0000000-0000-0000-0000-000000000004">Asian Paints Apex Weatherproof (20L)</option>
+                    <option value="e0000000-0000-0000-0000-000000000001">UltraTech Super PPC Cement (50kg Bag)</option>
+                    <option value="e0000000-0000-0000-0000-000000000002">Tata Tiscon 550D TMT Rebar (12mm Rod)</option>
+                    <option value="e0000000-0000-0000-0000-000000000003">Kajaria Polished Glazed Tiles (Box)</option>
+                    <option value="e0000000-0000-0000-0000-000000000004">Asian Paints TruCare Putty (40kg Bag)</option>
                   </select>
                 </div>
 
@@ -448,58 +716,31 @@ export default function SupplierPortalPage() {
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl"
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    Depot Lead Time (Hours)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="72"
-                    value={newStock.leadTimeHours}
-                    onChange={(e) => setNewStock({ ...newStock, leadTimeHours: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    Internal Depot SKU Code
-                  </label>
-                  <input
-                    type="text"
-                    value={newStock.supplierSku}
-                    onChange={(e) => setNewStock({ ...newStock, supplierSku: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-                  />
-                </div>
-
-                <div className="flex items-end">
-                  <button
-                    type="submit"
-                    disabled={actionLoading}
-                    className="w-full py-2 px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-                  >
-                    <Save className="w-4 h-4" />
-                    <span>Save Wholesale Rate</span>
-                  </button>
-                </div>
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs transition flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save Inventory Rates</span>
+                </button>
               </div>
             </form>
 
-            {/* List of supplier products */}
+            {/* Current Products List */}
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
               <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Current Managed Inventory
-                </h4>
-                <span className="text-[11px] text-slate-500">{products.length} records</span>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Registered Stock &amp; Benchmark Rates ({products.length})
+                </h3>
               </div>
 
               {products.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-500">
-                  No products added yet. Use the form above to add your stock and wholesale rates.
+                  No inventory items added yet. Use the form above to add your stock levels and wholesale settlement rates.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -562,8 +803,8 @@ export default function SupplierPortalPage() {
                 Assigned Site Purchase Orders
               </h3>
               <button
-                onClick={() => fetchPortalData(selectedSupplierId)}
-                className="text-xs text-amber-600 hover:text-amber-700 font-semibold flex items-center gap-1"
+                onClick={fetchPortalData}
+                className="text-xs text-amber-600 hover:text-amber-700 font-semibold flex items-center gap-1 cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" /> Refresh Orders
               </button>
@@ -773,24 +1014,24 @@ export default function SupplierPortalPage() {
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  GSTIN (Audited)
+                  Contact Email
                 </label>
                 <input
-                  type="text"
-                  disabled
-                  value={supplier?.gstin || 'Unregistered'}
-                  className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-mono cursor-not-allowed uppercase"
+                  type="email"
+                  value={profileForm.email}
+                  onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl"
                 />
               </div>
             </div>
 
-            <div className="flex justify-end pt-4 border-t border-slate-100">
+            <div className="flex justify-end pt-2">
               <button
                 type="submit"
                 disabled={actionLoading}
-                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition flex items-center gap-2"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition flex items-center gap-1.5"
               >
-                <Save className="w-4 h-4" />
+                <Save className="w-3.5 h-3.5" />
                 <span>Save Profile Changes</span>
               </button>
             </div>

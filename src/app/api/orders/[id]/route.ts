@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getOrderDetails } from '@/lib/orders/service';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getAuthenticatedServerSession } from '@/lib/auth/roles';
 
 interface Params {
   params: { id: string };
@@ -9,21 +9,12 @@ interface Params {
 export async function GET(request: Request, { params }: Params) {
   try {
     const orderId = params.id;
-    const { searchParams } = new URL(request.url);
-    let requesterUserId = searchParams.get('userId');
+    const session = await getAuthenticatedServerSession(request);
 
-    // Authenticated user check
-    try {
-      const supabase = createServerSupabaseClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        requesterUserId = user.id;
-      }
-    } catch {
-      // Handled
-    }
+    const requesterUserId = session?.id;
+    const isAdmin = session?.role === 'admin';
 
-    const res = await getOrderDetails(orderId, requesterUserId || undefined, false);
+    const res = await getOrderDetails(orderId, requesterUserId, isAdmin);
 
     if (!res.success) {
       return NextResponse.json(

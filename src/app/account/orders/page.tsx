@@ -23,6 +23,7 @@ import { Footer } from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
 import { formatPaiseToRupees } from '@/lib/money';
 import { StoredOrderRecord } from '@/lib/orders/service';
+import { getBrowserAuthHeaders } from '@/lib/auth/client-auth';
 
 export default function OrdersHistoryPage() {
   const router = useRouter();
@@ -39,7 +40,10 @@ export default function OrdersHistoryPage() {
         return;
       }
       try {
-        const res = await fetch(`/api/orders?userId=${encodeURIComponent(user.id)}`);
+        const authHeaders = await getBrowserAuthHeaders();
+        const res = await fetch(`/api/orders?userId=${encodeURIComponent(user.id)}`, {
+          headers: authHeaders,
+        });
         const data = await res.json();
         if (data.success && Array.isArray(data.orders)) {
           setOrders(data.orders);
@@ -58,9 +62,13 @@ export default function OrdersHistoryPage() {
     setReorderingId(orderId);
     setMessage(null);
     try {
+      const authHeaders = await getBrowserAuthHeaders();
       const res = await fetch(`/api/orders/${orderId}/reorder`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
         body: JSON.stringify({ userId: user?.id }),
       });
       const data = await res.json();

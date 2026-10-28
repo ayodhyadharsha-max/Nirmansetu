@@ -48,11 +48,11 @@ export const HomeContractorSection: React.FC<HomeContractorSectionProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>GSTIN-compliant tax invoices for full ITC</span>
+                  <span>GST tax invoices with your business GSTIN</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Dedicated on-site logistics manager</span>
+                  <span>Dedicated on-site logistics coordinator</span>
                 </div>
               </div>
 
@@ -81,7 +81,7 @@ export const HomeContractorSection: React.FC<HomeContractorSectionProps> = ({
             <div className="lg:col-span-5 bg-slate-900/80 rounded-2xl border border-slate-800 p-6 space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                 <span className="text-xs font-black text-amber-400 uppercase tracking-wide">
-                  Ayodhya Operations SLA
+                  Ayodhya Operations Support
                 </span>
                 <span className="text-[10px] bg-emerald-900/80 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-700">
                   Active 7 Days
@@ -91,7 +91,7 @@ export const HomeContractorSection: React.FC<HomeContractorSectionProps> = ({
               <div className="space-y-3 text-xs">
                 <div>
                   <div className="text-slate-400">Wholesale RFQ Response Time</div>
-                  <div className="font-extrabold text-white text-base">Under 120 Minutes</div>
+                  <div className="font-extrabold text-white text-base">Same-Day Response (Working Hours)</div>
                 </div>
 
                 <div>

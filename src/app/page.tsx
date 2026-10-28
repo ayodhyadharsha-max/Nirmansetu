@@ -1,27 +1,58 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from '@/components/Header';
-import { CategoryNav } from '@/components/CategoryNav';
-import { HeroBanner } from '@/components/HeroBanner';
+import { ServiceHighlights } from '@/components/ServiceHighlights';
+import { HeroPromoBanner } from '@/components/HeroPromoBanner';
 import { HomeCategoryGrid } from '@/components/HomeCategoryGrid';
-import { ProductCatalog } from '@/components/ProductCatalog';
 import { HomeDealsSection } from '@/components/HomeDealsSection';
-import { HomeBrandsSection } from '@/components/HomeBrandsSection';
-import { HomeContractorSection } from '@/components/HomeContractorSection';
+import { PopularMaterialsSection } from '@/components/PopularMaterialsSection';
+import { NewlyLaunchedSection } from '@/components/NewlyLaunchedSection';
+import { AuthenticityGuaranteeBanner } from '@/components/AuthenticityGuaranteeBanner';
+import { CuratedCollectionsSection } from '@/components/CuratedCollectionsSection';
+import { ContractorBulkSection } from '@/components/ContractorBulkSection';
 import { HomeHowItWorksSection } from '@/components/HomeHowItWorksSection';
-import { LocalSupplierTransparency } from '@/components/LocalSupplierTransparency';
 import { HomeFaqSection } from '@/components/HomeFaqSection';
 import { MaterialCalculatorModal } from '@/components/MaterialCalculatorModal';
 import { BulkEnquiryModal } from '@/components/BulkEnquiryModal';
 import { CartDrawer } from '@/components/CartDrawer';
 import { Footer } from '@/components/Footer';
 import { useCart } from '@/context/CartContext';
-import { SEED_CATALOG_ITEMS } from '@/lib/catalog/seed-data';
+import { Category, Brand, PublicCatalogItem } from '@/types/database';
+import { SEED_CATEGORIES, SEED_BRANDS, SEED_CATALOG_ITEMS } from '@/lib/catalog/seed-data';
 
 export default function HomePage() {
   const { selectedPincode, setSelectedPincode, addToCart } = useCart();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  // Dynamic live database data with instantaneous initial state
+  const [categories, setCategories] = useState<Category[]>(SEED_CATEGORIES);
+  const [brands, setBrands] = useState<Brand[]>(SEED_BRANDS);
+  const [products, setProducts] = useState<PublicCatalogItem[]>(SEED_CATALOG_ITEMS.slice(0, 8));
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      try {
+        const [catRes, brandRes, prodRes] = await Promise.all([
+          fetch('/api/categories').then((r) => r.json()).catch(() => ({ categories: [] })),
+          fetch('/api/brands').then((r) => r.json()).catch(() => ({ brands: [] })),
+          fetch('/api/products').then((r) => r.json()).catch(() => ({ items: [] })),
+        ]);
+        if (isMounted) {
+          if (catRes?.categories?.length) setCategories(catRes.categories);
+          if (brandRes?.brands?.length) setBrands(brandRes.brands);
+          setProducts(prodRes?.items || []);
+        }
+      } catch {
+        // Handled
+      }
+    }
+    loadData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Modals
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
@@ -41,25 +72,11 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col bg-white text-slate-900">
       
-      {/* 1, 2, 3: Announcement Bar, Main Header, Desktop Mega-Menu, Mobile Nav */}
+      {/* 1. Header with Announcement Bar, Logo, Location, Search, Cart & Category Navigation */}
       <Header
-        onOpenCalculator={() => setIsCalculatorOpen(true)}
-        onOpenEnquiry={() => {
-          setEnquiryInitialItems([]);
-          setIsEnquiryOpen(true);
-        }}
-      />
-
-      {/* Sub-Category Navigation Bar */}
-      <CategoryNav
         selectedCategory={selectedCategory}
         onSelectCategory={setSelectedCategory}
         onOpenCalculator={() => setIsCalculatorOpen(true)}
-      />
-
-      {/* 4. Hero Banner with Quick SLA Checker & Contractor Card */}
-      <HeroBanner
-        onPincodeSubmit={setSelectedPincode}
         onOpenEnquiry={() => {
           setEnquiryInitialItems([]);
           setIsEnquiryOpen(true);
@@ -67,50 +84,66 @@ export default function HomePage() {
       />
 
       <main className="flex-1">
-        {/* 5. Shop by Category Grid (9 Categories) */}
-        <HomeCategoryGrid />
+        {/* 2. Service Trust Highlights: Pay on Delivery, Direct Rates, Rapid Dispatch */}
+        <ServiceHighlights />
 
-        {/* 6. Best-Selling Products Fetched from Catalogue Backend */}
-        <ProductCatalog
-          items={SEED_CATALOG_ITEMS}
-          selectedCategory={selectedCategory}
-          selectedPincode={selectedPincode}
-          onAddToCart={addToCart}
+        {/* 3. Hero Promo Banner: "Everything Your Project Needs. In One Place." */}
+        <HeroPromoBanner
           onOpenEnquiry={() => {
             setEnquiryInitialItems([]);
             setIsEnquiryOpen(true);
           }}
         />
 
-        {/* 8. Deals Based on Actual Admin-Configured Promotions */}
+        {/* 4. 24 Category Squircles Grid with Bulk Prices Badges */}
+        <HomeCategoryGrid categories={categories} />
+
+        {/* 5. Deals Of The Week Product Carousel (Working arrows & smooth scroll) */}
         <HomeDealsSection
-          items={SEED_CATALOG_ITEMS}
-          selectedPincode={selectedPincode}
-        />
-
-        {/* 7. Featured Brands Based on Approved Catalogue Data */}
-        <HomeBrandsSection />
-
-        {/* 9. Contractor and Bulk-Order Section */}
-        <HomeContractorSection
-          onOpenCalculator={() => setIsCalculatorOpen(true)}
           onOpenEnquiry={() => {
             setEnquiryInitialItems([]);
             setIsEnquiryOpen(true);
           }}
         />
 
-        {/* 10, 11. Product Trust, Service Info & How Ordering & Fulfilment Work */}
+        {/* 6. Popular Construction Materials Product Carousel */}
+        <PopularMaterialsSection
+          onOpenEnquiry={() => {
+            setEnquiryInitialItems([]);
+            setIsEnquiryOpen(true);
+          }}
+        />
+
+        {/* 7. Newly Launched Arrivals Product Carousel */}
+        <NewlyLaunchedSection
+          onOpenEnquiry={() => {
+            setEnquiryInitialItems([]);
+            setIsEnquiryOpen(true);
+          }}
+        />
+
+        {/* 8. 100% Genuine Materials Quality Protocol Guarantee */}
+        <AuthenticityGuaranteeBanner />
+
+        {/* 9. Curated Collections: Hettich, Dr. Fixit, Fevicol, Putty/Primers & Electrical Piping Slider */}
+        <CuratedCollectionsSection />
+
+        {/* 10. Contractor Bulk Buys Commercial Lot Carousel */}
+        <ContractorBulkSection
+          onOpenEnquiry={() => {
+            setEnquiryInitialItems([]);
+            setIsEnquiryOpen(true);
+          }}
+        />
+
+        {/* 11. Fulfillment Architecture & Site Quality Commitments with Genuine Photos */}
         <HomeHowItWorksSection />
 
-        {/* Local Supplier Transparency Model */}
-        <LocalSupplierTransparency />
-
-        {/* 12. Technical FAQs and Buying Guides */}
+        {/* 12. Technical FAQs and Buying Guides for Ayodhya Contractors */}
         <HomeFaqSection />
       </main>
 
-      {/* 13. Footer with Configurable Business Details and Policies */}
+      {/* 13. Broad Yellow Theme Footer with Newsletter & Ayodhya Hub Directory */}
       <Footer />
 
       {/* Interactive Modals & Drawers */}

@@ -4,8 +4,14 @@ import React from 'react';
 import Link from 'next/link';
 import { Award, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { SEED_BRANDS } from '@/lib/catalog/seed-data';
+import { Brand } from '@/types/database';
 
-export const HomeBrandsSection: React.FC = () => {
+interface HomeBrandsSectionProps {
+  brands?: Brand[];
+}
+
+export const HomeBrandsSection: React.FC<HomeBrandsSectionProps> = ({ brands }) => {
+  const displayBrands = brands && brands.length > 0 ? brands : SEED_BRANDS;
   return (
     <section className="py-12 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -20,7 +26,7 @@ export const HomeBrandsSection: React.FC = () => {
               Featured Brands Based on Approved Catalogue
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 mt-1">
-              Direct dispatches from authorized primary distributors with authentic test certificates and warranties.
+              Dispatches sourced from verified regional distributors with transparent billing and warranty support.
             </p>
           </div>
 
@@ -35,7 +41,7 @@ export const HomeBrandsSection: React.FC = () => {
 
         {/* Brands Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-          {SEED_BRANDS.map((brand) => (
+          {displayBrands.map((brand) => (
             <Link
               key={brand.id}
               href={`/search?brand=${brand.slug}`}

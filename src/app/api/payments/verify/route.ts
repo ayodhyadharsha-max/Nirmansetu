@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { confirmVerifiedPayment, recordPaymentFailure } from '@/lib/payments/razorpay';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 const VerifyPaymentSchema = z.object({
   orderId: z.string().min(1, 'Order ID is required'),
@@ -73,6 +74,28 @@ export async function POST(request: Request) {
 
     const order = verification.order;
 
+    // Check if caller is authenticated with verified phone
+    let isPhoneVerified = false;
+    try {
+      const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+      const supabase = createServerSupabaseClient();
+      let authUser = null;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        const { data } = await supabase.auth.getUser(token);
+        authUser = data.user;
+      }
+      if (!authUser) {
+        const { data } = await supabase.auth.getUser();
+        authUser = data.user;
+      }
+      if (authUser?.phone_confirmed_at) {
+        isPhoneVerified = true;
+      }
+    } catch {
+      // Optional
+    }
+
     return NextResponse.json({
       success: true,
       orderNumber: order.order_number,
@@ -80,7 +103,10 @@ export async function POST(request: Request) {
       paymentStatus: order.payment_status,
       orderStatus: order.status,
       totalPaise: order.total_paise,
-      deliveryOtp: order.delivery_otp_plain,
+      deliveryOtp: isPhoneVerified ? order.delivery_otp_plain : null,
+      deliveryOtpNotice: isPhoneVerified
+        ? 'Display your 4-digit drop-off verification PIN upon material inspection at jobsite.'
+        : 'For security, your 4-digit material drop-off verification PIN will be dispatched via SMS directly to the recipient mobile number upon supplier truck dispatch.',
       message: 'Payment verified successfully! Your order has been confirmed and routed to local Ayodhya suppliers.',
     });
   } catch (err: unknown) {

@@ -7,7 +7,7 @@ const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://nirmansetu.in';
 
 export const metadata: Metadata = {
   metadataBase: new URL(baseUrl),
-  title: `${BRAND_CONFIG.name} | Construction Materials Delivered in Ayodhya | 60-120 Min Delivery`,
+  title: `${BRAND_CONFIG.name} | Construction Materials Delivered in Ayodhya Dham`,
   description: `Buy genuine cement, TMT steel, red bricks, CPVC pipes, electrical & waterproofing materials in Ayodhya Dham with fast site delivery. Powered by approved local suppliers.`,
   keywords: [
     'Ayodhya construction materials',

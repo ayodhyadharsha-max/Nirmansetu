@@ -11,6 +11,7 @@
 
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { SEED_CATALOG_ITEMS } from '@/lib/catalog/seed-data';
+import { ALL_HOMERUN_PRODUCTS } from '@/config/homerun-catalog';
 import { calculateOrderTotals, calculateTaxPaise } from '@/lib/money';
 import { validateCoupon, CouponRecord } from '@/lib/coupons/service';
 import { AYODHYA_REGIONAL_HUBS, BRAND_CONFIG } from '@/config/brand';
@@ -24,6 +25,7 @@ export interface CartItemDetail {
   variant_title: string;
   sku: string;
   unit_of_measure: string;
+  hsn_code?: string;
   quantity: number;
   unit_price_paise: number;
   mrp_paise: number;
@@ -68,58 +70,165 @@ const memoryCarts = new Map<string, {
 
 /**
  * Finds variant details from trusted catalog sources (database or verified seed data).
+ * Authoritatively validates any client-provided variant ID, option identifier, or catalog slug.
  */
-export async function getTrustedVariantDetails(variantId: string) {
+export async function getTrustedVariantDetails(variantId: string): Promise<Omit<CartItemDetail, 'id' | 'cart_id' | 'quantity' | 'total_line_paise' | 'validation_warnings'> | null> {
+  if (!variantId || typeof variantId !== 'string') return null;
+  const cleanId = variantId.trim();
+  const unPrefixed = cleanId.startsWith('v-') ? cleanId.slice(2) : cleanId;
+
+  // 1. Try DB lookup by exact variant_id or unPrefixed if UUID
   try {
     const supabase = createServerSupabaseClient();
-    const { data: item, error } = await supabase
-      .from('public_catalog_view')
-      .select('*')
-      .eq('variant_id', variantId)
-      .maybeSingle();
+    const isCleanUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+    const isUnprefixedUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(unPrefixed);
+    const targetQueryId = isCleanUuid ? cleanId : (isUnprefixedUuid ? unPrefixed : null);
 
-    if (!error && item) {
-      return {
-        variant_id: item.variant_id,
-        product_id: item.product_id,
-        product_title: item.product_title,
-        variant_title: item.variant_title,
-        sku: item.sku,
-        unit_of_measure: item.unit_of_measure,
-        selling_price_paise: item.selling_price_paise,
-        mrp_paise: item.mrp_paise,
-        gst_rate_pct: Number(item.tax_rate_pct || 18.0),
-        min_order_qty: item.min_order_qty || 1,
-        max_order_qty: item.max_order_qty || 1000,
-        available_stock: item.total_available_stock || 0,
-        is_available: item.is_in_stock,
-        image_url: item.images?.[0] || '/images/placeholder-product.png',
-      };
+    if (targetQueryId) {
+      const { data: item, error } = await supabase
+        .from('public_catalog_view')
+        .select('*')
+        .eq('variant_id', targetQueryId)
+        .maybeSingle();
+
+      if (!error && item && item.selling_price_paise > 0) {
+        return {
+          variant_id: item.variant_id,
+          product_id: item.product_id,
+          product_title: item.product_title,
+          variant_title: item.variant_title,
+          sku: item.sku,
+          unit_of_measure: item.unit_of_measure,
+          hsn_code: item.hsn_code || '252329',
+          unit_price_paise: item.selling_price_paise,
+          mrp_paise: item.mrp_paise,
+          gst_rate_pct: Number(item.tax_rate_pct || 18.0),
+          min_order_qty: item.min_order_qty || 1,
+          max_order_qty: item.max_order_qty || 1000,
+          available_stock: item.total_available_stock || 0,
+          is_available: item.is_in_stock,
+          image_url: item.images?.[0] || '/images/placeholder-product.png',
+        };
+      }
     }
   } catch {
-    // Fallback safely to verified seed dataset
+    // Database query failed
   }
 
-  const seed = SEED_CATALOG_ITEMS.find((s) => s.variant_id === variantId);
-  if (seed) {
+  // 2. Direct match in SEED_CATALOG_ITEMS (by variant_id, product_id, or product_slug)
+  const seedItem = SEED_CATALOG_ITEMS.find(
+    (s) =>
+      s.variant_id === cleanId ||
+      s.variant_id === unPrefixed ||
+      s.product_id === cleanId ||
+      s.product_id === unPrefixed ||
+      s.product_slug === cleanId ||
+      s.product_slug === unPrefixed
+  );
+
+  if (seedItem) {
     return {
-      variant_id: seed.variant_id,
-      product_id: seed.product_id,
-      product_title: seed.product_title,
-      variant_title: seed.variant_title,
-      sku: seed.sku,
-      unit_of_measure: seed.unit_of_measure,
-      selling_price_paise: seed.selling_price_paise,
-      mrp_paise: seed.mrp_paise,
-      gst_rate_pct: Number(seed.tax_rate_pct || 18.0),
-      min_order_qty: seed.min_order_qty || 1,
-      max_order_qty: seed.max_order_qty || 1000,
-      available_stock: seed.total_available_stock || 0,
-      is_available: seed.is_in_stock,
-      image_url: seed.images?.[0] || '/images/placeholder-product.png',
+      variant_id: seedItem.variant_id,
+      product_id: seedItem.product_id,
+      product_title: seedItem.product_title,
+      variant_title: seedItem.variant_title,
+      sku: seedItem.sku,
+      unit_of_measure: seedItem.unit_of_measure,
+      hsn_code: seedItem.hsn_code || '252329',
+      unit_price_paise: seedItem.selling_price_paise,
+      mrp_paise: seedItem.mrp_paise,
+      gst_rate_pct: Number(seedItem.tax_rate_pct || 18.0),
+      min_order_qty: seedItem.min_order_qty || 1,
+      max_order_qty: seedItem.max_order_qty || 1000,
+      available_stock: seedItem.total_available_stock || 500,
+      is_available: seedItem.is_in_stock ?? true,
+      image_url: seedItem.images?.[0] || '/images/placeholder-product.png',
     };
   }
 
+  // 3. Option matching in ALL_HOMERUN_PRODUCTS (e.g. 'v-havells-0.75sqmm', 'havells-0.75sqmm', etc.)
+  for (const prod of ALL_HOMERUN_PRODUCTS) {
+    const matchedOpt = prod.options?.find(
+      (o) =>
+        o.id === cleanId ||
+        o.id === unPrefixed ||
+        `v-${o.id}` === cleanId ||
+        `${prod.id}-${o.id}` === cleanId ||
+        `${prod.id}-${o.id}` === unPrefixed
+    );
+
+    if (matchedOpt) {
+      // Find base seed product to inherit valid PostgreSQL foreign-key variant UUID and statutory HSN
+      const baseSeed =
+        SEED_CATALOG_ITEMS.find((s) => s.product_slug === prod.slug || s.product_id === prod.id) ||
+        SEED_CATALOG_ITEMS.find((s) => s.brand_name && s.brand_name.toLowerCase() === prod.brand.toLowerCase());
+
+      const effectiveVariantId = baseSeed ? baseSeed.variant_id : 'e0000000-0000-0000-0000-000000000006';
+      const effectiveProductId = baseSeed ? baseSeed.product_id : 'd0000000-0000-0000-0000-000000000005';
+      const effectiveHsn = baseSeed?.hsn_code || (prod.brand.toLowerCase().includes('havells') ? '854449' : '252329');
+      const unit = baseSeed?.unit_of_measure || (matchedOpt.packSize?.includes('Coil') ? '90m coil' : 'units');
+
+      return {
+        variant_id: effectiveVariantId,
+        product_id: effectiveProductId,
+        product_title: prod.title,
+        variant_title: matchedOpt.title || matchedOpt.name || matchedOpt.packSize || baseSeed?.variant_title || 'Standard',
+        sku: `SKU-${matchedOpt.id.toUpperCase().replace(/[^A-Z0-9]/g, '-')}`,
+        unit_of_measure: unit,
+        hsn_code: effectiveHsn,
+        unit_price_paise: matchedOpt.price * 100, // Authoritative server price from product option
+        mrp_paise: (matchedOpt.mrp || matchedOpt.price) * 100,
+        gst_rate_pct: Number(baseSeed?.tax_rate_pct || 18.0),
+        min_order_qty: 1,
+        max_order_qty: 500,
+        available_stock: baseSeed?.total_available_stock || 110,
+        is_available: true,
+        image_url: matchedOpt.imageUrl || prod.imageUrl || baseSeed?.images?.[0] || '/images/placeholder-product.png',
+      };
+    }
+  }
+
+  // 4. Product matching in ALL_HOMERUN_PRODUCTS (e.g. 'v-pop-6', 'pop-6', 'havells-lifeline-plus-25-wire')
+  const matchedProd = ALL_HOMERUN_PRODUCTS.find(
+    (p) =>
+      p.id === cleanId ||
+      p.id === unPrefixed ||
+      p.slug === cleanId ||
+      p.slug === unPrefixed ||
+      p.altSlugs?.includes(cleanId) ||
+      p.altSlugs?.includes(unPrefixed)
+  );
+
+  if (matchedProd) {
+    const baseSeed =
+      SEED_CATALOG_ITEMS.find((s) => s.product_slug === matchedProd.slug || s.product_id === matchedProd.id) ||
+      SEED_CATALOG_ITEMS.find((s) => s.brand_name && s.brand_name.toLowerCase() === matchedProd.brand.toLowerCase());
+
+    const effectiveVariantId = baseSeed ? baseSeed.variant_id : 'e0000000-0000-0000-0000-000000000006';
+    const effectiveProductId = baseSeed ? baseSeed.product_id : 'd0000000-0000-0000-0000-000000000005';
+    const effectiveHsn = baseSeed?.hsn_code || (matchedProd.brand.toLowerCase().includes('havells') ? '854449' : '252329');
+    const unit = baseSeed?.unit_of_measure || (matchedProd.title.toLowerCase().includes('wire') ? '90m coil' : 'units');
+
+    return {
+      variant_id: effectiveVariantId,
+      product_id: effectiveProductId,
+      product_title: matchedProd.title,
+      variant_title: matchedProd.options?.[0]?.title || baseSeed?.variant_title || 'Standard',
+      sku: `SKU-${matchedProd.id.toUpperCase().replace(/[^A-Z0-9]/g, '-')}`,
+      unit_of_measure: unit,
+      hsn_code: effectiveHsn,
+      unit_price_paise: matchedProd.price * 100, // Authoritative server price from homerun catalog
+      mrp_paise: matchedProd.mrp * 100,
+      gst_rate_pct: Number(baseSeed?.tax_rate_pct || 18.0),
+      min_order_qty: 1,
+      max_order_qty: 500,
+      available_stock: baseSeed?.total_available_stock || 110,
+      is_available: true,
+      image_url: matchedProd.imageUrl || baseSeed?.images?.[0] || '/images/placeholder-product.png',
+    };
+  }
+
+  // Not found in any trusted source
   return null;
 }
 
@@ -157,7 +266,11 @@ export async function calculateDeliveryFeeForPincode(pincode: string, isExpress 
 /**
  * Retrieves full cart with server-side validation, live stock checks and pricing.
  */
-export async function getCart(cartIdentifier: string, pincode?: string): Promise<CartState> {
+export async function getCart(
+  cartIdentifier: string,
+  pincode?: string,
+  overrideItems?: Array<{ variantId: string; quantity: number }>
+): Promise<CartState> {
   const targetPincode = pincode || BRAND_CONFIG.defaultPincode;
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cartIdentifier);
 
@@ -193,7 +306,20 @@ export async function getCart(cartIdentifier: string, pincode?: string): Promise
   let couponCode: string | null = null;
   let activePincode = dbCart?.delivery_pincode || targetPincode;
 
-  if (dbCart) {
+  if (overrideItems && overrideItems.length > 0) {
+    // Use authoritative items submitted directly from client cart
+    cartId = isUuid ? cartIdentifier : (dbCart?.id || cartIdentifier);
+    rawItems = overrideItems.map((i, idx) => ({ id: `client-item-${idx}`, ...i }));
+    memoryCarts.set(cartIdentifier, {
+      id: cartId,
+      userId: dbCart?.user_id || null,
+      sessionToken: isUuid ? null : cartIdentifier,
+      pincode: activePincode,
+      couponCode: null,
+      items: overrideItems,
+      updatedAt: new Date(),
+    });
+  } else if (dbCart) {
     rawItems = dbItems.map((i) => ({ id: i.id, variantId: i.variant_id, quantity: i.quantity }));
     if (dbCart.coupon_id) {
       // Look up coupon
@@ -234,7 +360,7 @@ export async function getCart(cartIdentifier: string, pincode?: string): Promise
   for (const raw of rawItems) {
     const variant = await getTrustedVariantDetails(raw.variantId);
     if (!variant) {
-      checkoutErrors.push(`Item variant ${raw.variantId} is no longer available in catalog.`);
+      checkoutErrors.push(`Item variant "${raw.variantId}" is no longer available in catalog.`);
       continue;
     }
 
@@ -252,7 +378,7 @@ export async function getCart(cartIdentifier: string, pincode?: string): Promise
       checkoutErrors.push(`${variant.product_title}: Minimum order quantity is ${variant.min_order_qty}.`);
     }
 
-    const totalLinePaise = variant.selling_price_paise * raw.quantity;
+    const totalLinePaise = variant.unit_price_paise * raw.quantity;
 
     detailedItems.push({
       id: raw.id || `item-${variant.variant_id}`,
@@ -263,8 +389,9 @@ export async function getCart(cartIdentifier: string, pincode?: string): Promise
       variant_title: variant.variant_title,
       sku: variant.sku,
       unit_of_measure: variant.unit_of_measure,
+      hsn_code: variant.hsn_code,
       quantity: raw.quantity,
-      unit_price_paise: variant.selling_price_paise,
+      unit_price_paise: variant.unit_price_paise,
       mrp_paise: variant.mrp_paise,
       gst_rate_pct: variant.gst_rate_pct,
       min_order_qty: variant.min_order_qty,

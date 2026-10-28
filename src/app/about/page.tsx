@@ -25,7 +25,7 @@ export default function AboutPage() {
               About {BRAND_CONFIG.name}
             </h1>
             <p className="text-sm sm:text-base text-slate-600 max-w-2xl mx-auto leading-relaxed">
-              Empowering construction sites across Ayodhya Dham and Faizabad with guaranteed 60-120 minute material delivery through verified local stockists.
+              Empowering construction sites across Ayodhya Dham and Faizabad with prompt material delivery through verified local stockists.
             </p>
           </div>
 
@@ -36,28 +36,28 @@ export default function AboutPage() {
               <span>Our Operating Philosophy</span>
             </div>
             <h2 className="text-2xl font-black text-slate-950">
-              Zero Owned Warehouses. 100% Genuine Local Stockist Fulfillment.
+              Zero Owned Warehouses. Quality Local Stockist Fulfillment.
             </h2>
             <div className="space-y-4 text-xs sm:text-sm text-slate-600 leading-relaxed">
               <p>
                 Inspired by the agile on-demand delivery models of modern construction marketplaces, <strong>{BRAND_CONFIG.name}</strong> was created to solve the acute logistics friction facing builders, contractors, and individuals in Ayodhya.
               </p>
               <p>
-                Instead of locking up millions in inventory or running centralized speculative warehouses, we partner directly with the most established building material stockists across Ayodhya Dham, Faizabad, Darshannagar, and Sohawal.
+                Instead of locking up millions in inventory or running centralized speculative warehouses, we partner directly with established building material stockists across Ayodhya Dham, Faizabad, Darshannagar, and Sohawal.
               </p>
               <p>
-                When an order or bulk schedule is confirmed on our platform, our intelligent dispatch router assigns the order to the vetted local stockist closest to your construction site. Sourced directly from manufacturers—including UltraTech, Tata Tiscon, Kajaria, Asian Paints, and Supreme—every order arrives with manufacturer test certificates and a physical drop-off OTP inspection guarantee.
+                When an order or bulk schedule is confirmed on our platform, our dispatch router assigns the order to the vetted local stockist closest to your construction site. Sourced from leading brands—including UltraTech, Tata Tiscon, Kajaria, Asian Paints, and Supreme—every order arrives with a physical drop-off OTP inspection safeguard.
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                <div className="font-black text-lg text-slate-950">60-120 Mins</div>
-                <div className="text-xs text-slate-500 mt-0.5">Average site dispatch SLA across Ayodhya district</div>
+                <div className="font-black text-lg text-slate-950">Scheduled Dispatch</div>
+                <div className="text-xs text-slate-500 mt-0.5">Prompt delivery coordinated across Ayodhya district</div>
               </div>
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                <div className="font-black text-lg text-slate-950">100% GST ITC</div>
-                <div className="text-xs text-slate-500 mt-0.5">Formal tax invoice with every order for contractor claims</div>
+                <div className="font-black text-lg text-slate-950">Statutory GST</div>
+                <div className="text-xs text-slate-500 mt-0.5">Formal tax invoice with every order with HSN classification</div>
               </div>
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
                 <div className="font-black text-lg text-slate-950">Zero Risk OTP</div>

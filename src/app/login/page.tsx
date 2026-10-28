@@ -1,186 +1,649 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Building2, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  Phone,
+  ShieldCheck,
+  ArrowRight,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+  Building2,
+  User,
+  Mail,
+  FileText,
+  KeyRound,
+  Sparkles,
+} from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
 import { createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { validateAndNormalizeIndianPhone } from '@/lib/auth/phone';
 import { BRAND_CONFIG } from '@/config/brand';
 
-export default function LoginPage() {
+type LoginStep = 'phone_input' | 'otp_verify' | 'profile_register';
+
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectUrl = searchParams.get('redirect') || '/account';
+
   const { user, setUserSession, signInDemoUser } = useAuth();
 
+  // Multi-step state
+  const [step, setStep] = useState<LoginStep>('phone_input');
+  const [rawPhone, setRawPhone] = useState('');
+  const [normalizedPhone, setNormalizedPhone] = useState('');
+  const [displayPhone, setDisplayPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [authenticatedUserId, setAuthenticatedUserId] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+
+  // New registration fields
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [gstin, setGstin] = useState('');
+
+  // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [technicalError, setTechnicalError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Resend cooldown timer
+  const [cooldown, setCooldown] = useState(0);
+  const [attemptsRemaining, setAttemptsRemaining] = useState(3);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (cooldown > 0) {
+      timerRef.current = setTimeout(() => {
+        setCooldown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [cooldown]);
+
+  // If already logged in, redirect
+  useEffect(() => {
+    if (user && step === 'phone_input') {
+      router.push(redirectUrl);
+    }
+  }, [user, redirectUrl, router, step]);
+
+  // Step 1: Send OTP
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setErrorMessage(null);
+    setTechnicalError(null);
+
+    const validation = validateAndNormalizeIndianPhone(rawPhone);
+    if (!validation.isValid) {
+      setErrorMessage(validation.error || 'Please enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+
     setIsLoading(true);
+    setNormalizedPhone(validation.normalized);
+    setDisplayPhone(validation.display);
 
     try {
       const supabase = createBrowserSupabaseClient();
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: validation.normalized,
       });
 
       if (error) {
         throw error;
       }
 
-      if (data.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', data.user.id)
-          .maybeSingle();
+      setStep('otp_verify');
+      setCooldown(60);
+      setAttemptsRemaining(3);
+      setTechnicalError(null);
+      setInfoMessage(`6-digit verification code sent to ${validation.display}`);
+    } catch (err: unknown) {
+      const rawMsg = err instanceof Error ? err.message : 'Failed to send verification code';
+      console.warn('[NirmanSetu Auth] SMS delivery issue:', rawMsg);
+      setTechnicalError(rawMsg);
+      setErrorMessage(
+        'We are temporarily unable to send a verification code to your mobile number. Please try again later.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  // Resend OTP
+  const handleResendOtp = async () => {
+    if (cooldown > 0 || !normalizedPhone) return;
+    setErrorMessage(null);
+    setTechnicalError(null);
+    setIsLoading(true);
+
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: normalizedPhone,
+      });
+
+      if (error) throw error;
+
+      setCooldown(60);
+      setAttemptsRemaining(3);
+      setOtp('');
+      setTechnicalError(null);
+      setInfoMessage(`New verification code sent to ${displayPhone}`);
+    } catch (err: unknown) {
+      const rawMsg = err instanceof Error ? err.message : 'Error resending OTP';
+      console.warn('[NirmanSetu Auth] Resend OTP error:', rawMsg);
+      setTechnicalError(rawMsg);
+      setErrorMessage(
+        'We are temporarily unable to resend a verification code right now. Please try again in a few moments.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Step 2: Verify OTP
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    const cleanOtp = otp.trim();
+    if (!/^\d{6}$/.test(cleanOtp)) {
+      setErrorMessage('Please enter the complete 6-digit OTP code.');
+      return;
+    }
+
+    if (attemptsRemaining <= 0) {
+      setErrorMessage('Maximum attempts exceeded. Please request a new OTP.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: normalizedPhone,
+        token: cleanOtp,
+        type: 'sms',
+      });
+
+      if (error) {
+        setAttemptsRemaining((prev) => prev - 1);
+        throw error;
+      }
+
+      if (!data.user) {
+        throw new Error('Verification completed but no user session was returned.');
+      }
+
+      const uid = data.user.id;
+      setAuthenticatedUserId(uid);
+
+      // Persist access token in state & sessionStorage for seamless profile completion
+      const token = data.session?.access_token || null;
+      if (token) {
+        setSessionToken(token);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('nirmansetu_auth_token', token);
+        }
+      }
+
+      // Check if profile exists for this customer with verified token
+      let activeToken = token;
+      if (!activeToken) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        activeToken = sessionData?.session?.access_token || null;
+      }
+
+      const headers: Record<string, string> = {};
+      if (activeToken) {
+        headers['Authorization'] = `Bearer ${activeToken}`;
+      }
+
+      const res = await fetch(`/api/auth/profile?userId=${encodeURIComponent(uid)}`, {
+        headers,
+        credentials: 'include',
+      });
+      const profileData = await res.json();
+      const existingProfile = profileData?.profile;
+
+      if (existingProfile && existingProfile.full_name) {
+        // RETURNING CUSTOMER: Direct sign-in, restore session
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('nirmansetu_auth_token');
+        }
         setUserSession({
-          id: data.user.id,
-          email: data.user.email,
-          fullName: profile?.full_name || data.user.email?.split('@')[0] || 'Ayodhya Builder',
-          role: profile?.role || 'customer',
-          phone: profile?.phone_number,
-          companyName: profile?.company_name,
-          gstin: profile?.gstin,
+          id: uid,
+          email: existingProfile.email || data.user.email,
+          fullName: existingProfile.full_name,
+          role: existingProfile.role || 'customer',
+          phone: existingProfile.phone || normalizedPhone,
+          companyName: existingProfile.company_name || existingProfile.business_name || undefined,
+          gstin: existingProfile.gstin || undefined,
         });
 
-        router.push('/account');
+        router.push(redirectUrl);
+      } else {
+        // FIRST VISIT: Prompt for profile registration
+        setStep('profile_register');
+        setInfoMessage('Mobile number verified! Please complete your customer profile.');
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Invalid credentials';
+      const msg = err instanceof Error ? err.message : 'Invalid or expired OTP. Please check and try again.';
       setErrorMessage(msg);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDemoLogin = (role: 'contractor' | 'customer') => {
-    signInDemoUser(role);
-    router.push('/account');
+  // Step 3: Complete Customer Registration
+  const handleRegisterProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    if (!fullName.trim() || fullName.trim().length < 2) {
+      setErrorMessage('Full Name is required (minimum 2 characters) to set up your customer account.');
+      return;
+    }
+
+    if (!authenticatedUserId) {
+      setErrorMessage('Session expired. Please restart mobile verification.');
+      setStep('phone_input');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const supabase = createBrowserSupabaseClient();
+      let activeToken = sessionToken;
+      if (!activeToken && typeof window !== 'undefined') {
+        activeToken = sessionStorage.getItem('nirmansetu_auth_token');
+      }
+      if (!activeToken) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        activeToken = sessionData?.session?.access_token || null;
+      }
+
+      if (!activeToken) {
+        setErrorMessage('Verification session expired. Please verify your mobile number again.');
+        setStep('phone_input');
+        return;
+      }
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${activeToken}`,
+      };
+
+      const res = await fetch('/api/auth/profile', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: authenticatedUserId,
+          fullName: fullName.trim(),
+          phone: normalizedPhone,
+          email: email.trim() || undefined,
+          businessName: companyName.trim() || undefined,
+          companyName: companyName.trim() || undefined,
+          gstin: gstin.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Unable to save your customer profile. Please try again.');
+      }
+
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('nirmansetu_auth_token');
+      }
+
+      // Establish session with saved profile data
+      const saved = data.profile || {};
+      setUserSession({
+        id: authenticatedUserId,
+        email: saved.email || email.trim() || undefined,
+        fullName: saved.full_name || fullName.trim(),
+        role: saved.role || (companyName.trim() ? 'contractor' : 'customer'),
+        phone: saved.phone || normalizedPhone,
+        companyName: saved.business_name || companyName.trim() || undefined,
+        gstin: saved.gstin || gstin.trim() || undefined,
+      });
+
+      router.push(redirectUrl);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error creating customer account';
+      setErrorMessage(msg);
+      // Notice: form input states (fullName, email, companyName, gstin) are preserved for retry!
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       <Header />
 
-      <main className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 p-8 shadow-xl space-y-6">
+      <main className="flex-1 flex items-center justify-center py-10 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-xl space-y-6">
           
+          {/* Header Brand Badge */}
           <div className="text-center space-y-2">
             <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center mx-auto shadow-md">
-              <Building2 className="w-7 h-7" />
+              <Building2 className="w-6 h-6" />
             </div>
-            <h1 className="text-2xl font-black text-slate-950">Site Account Sign In</h1>
-            <p className="text-xs text-slate-500">
-              Access order tracking, contractor GST invoices, and site delivery OTPs in Ayodhya.
+            <h1 className="text-2xl font-black text-slate-950 tracking-tight">
+              {step === 'profile_register'
+                ? 'Complete Registration'
+                : step === 'otp_verify'
+                ? 'Verify Mobile Number'
+                : 'Mobile Number Sign In'}
+            </h1>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              {step === 'profile_register'
+                ? 'Enter your name and details to finish setting up your account'
+                : step === 'otp_verify'
+                ? `Enter the 6-digit OTP code sent to ${displayPhone}`
+                : 'Enter your Indian mobile number to receive a secure login OTP'}
             </p>
           </div>
 
+          {/* Feedback Messages */}
           {errorMessage && (
-            <div className="p-3 bg-red-50 text-red-700 text-xs rounded-xl flex items-center gap-2 border border-red-200">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{errorMessage}</span>
+            <div className="p-3.5 bg-red-50 text-red-900 text-xs rounded-xl border border-red-200 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span className="leading-relaxed font-medium">{errorMessage}</span>
+                </div>
+                {step === 'phone_input' && rawPhone.length === 10 && !isLoading && (
+                  <button
+                    type="button"
+                    onClick={() => handleSendOtp()}
+                    className="shrink-0 text-[11px] font-bold text-red-700 hover:text-red-900 bg-red-100 hover:bg-red-200 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Retry</span>
+                  </button>
+                )}
+              </div>
+              {technicalError && (process.env.NODE_ENV === 'development' || user?.role === 'admin') && (
+                <details className="text-[11px] text-slate-500 pt-1.5 border-t border-red-100 cursor-pointer">
+                  <summary className="font-semibold text-slate-600 hover:text-slate-900">
+                    Diagnostics (Authorized Admin / Dev Only)
+                  </summary>
+                  <p className="mt-1 font-mono text-[10px] text-slate-700 bg-white/80 p-2 rounded border border-red-100 break-words">
+                    Supabase Auth returned: &quot;{technicalError}&quot;. Configure Twilio, MessageBird, or Fast2SMS in Supabase Dashboard (Authentication &gt; Providers &gt; Phone).
+                  </p>
+                </details>
+              )}
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Email Address or Site ID
-              </label>
-              <div className="relative flex items-center">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
-                <input
-                  type="email"
-                  required
-                  placeholder="contractor@site.in"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
+          {infoMessage && (
+            <div className="p-3 bg-teal-50 text-teal-800 text-xs rounded-xl flex items-center gap-2 border border-teal-200">
+              <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
+              <span>{infoMessage}</span>
             </div>
+          )}
 
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-xs font-bold text-slate-700">
-                  Password
+          {/* ========================================================================= */}
+          {/* STEP 1: MOBILE NUMBER INPUT                                               */}
+          {/* ========================================================================= */}
+          {step === 'phone_input' && (
+            <form onSubmit={handleSendOtp} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Mobile Number <span className="text-red-500">*</span>
                 </label>
-                <a href="#" className="text-[11px] font-bold text-amber-600 hover:underline">
-                  Forgot Password?
-                </a>
-              </div>
-              <div className="relative flex items-center">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3 bg-slate-950 hover:bg-slate-800 disabled:bg-slate-400 text-amber-400 font-black text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-md"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Verifying Credentials...</span>
-                </>
-              ) : (
-                <span>Sign In to Account</span>
-              )}
-            </button>
-          </form>
-
-          {/* Quick Demo Access for Evaluation */}
-          <div className="pt-4 border-t border-slate-100">
-            <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 text-center mb-3">
-              One-Click Evaluation Access
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('contractor')}
-                className="p-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl text-left transition"
-              >
-                <div className="text-xs font-extrabold text-amber-950 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-amber-600" />
-                  <span>Contractor</span>
+                <div className="relative flex items-center rounded-xl border border-slate-300 overflow-hidden focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-200 transition-all">
+                  <div className="px-3 py-2.5 bg-slate-100 border-r border-slate-200 flex items-center gap-1.5 text-xs font-bold text-slate-700 shrink-0 select-none">
+                    <span>🇮🇳</span>
+                    <span>+91</span>
+                  </div>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={rawPhone}
+                    onChange={(e) => setRawPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="98765 43210"
+                    autoFocus
+                    required
+                    className="w-full px-3 py-2.5 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                  />
                 </div>
-                <div className="text-[10px] text-amber-800">Shri Ram Infra Ltd.</div>
-              </button>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  We will send a 6-digit OTP code to this number for verification.
+                </p>
+              </div>
 
               <button
-                type="button"
-                onClick={() => handleDemoLogin('customer')}
-                className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-left transition"
+                type="submit"
+                disabled={isLoading || rawPhone.length !== 10}
+                className="w-full py-3 bg-slate-950 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
               >
-                <div className="text-xs font-extrabold text-slate-900">Retail Builder</div>
-                <div className="text-[10px] text-slate-500">Home Owner Site</div>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Sending OTP...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Get OTP</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
-            </div>
-          </div>
+            </form>
+          )}
 
-          <div className="text-center text-xs text-slate-500 pt-2">
-            <span>New site in Ayodhya? </span>
-            <Link href="/register" className="font-bold text-amber-600 hover:underline">
-              Register as Contractor or Home Owner
-            </Link>
+          {/* ========================================================================= */}
+          {/* STEP 2: 6-DIGIT OTP VERIFICATION                                         */}
+          {/* ========================================================================= */}
+          {step === 'otp_verify' && (
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
+                <span className="font-semibold text-slate-700">{displayPhone}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('phone_input');
+                    setOtp('');
+                    setErrorMessage(null);
+                  }}
+                  className="text-amber-700 font-bold hover:underline cursor-pointer"
+                >
+                  Change
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Enter 6-Digit OTP <span className="text-red-500">*</span>
+                </label>
+                <div className="relative flex items-center">
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="• • • • • •"
+                    autoFocus
+                    required
+                    className="w-full pl-9 pr-3 py-2.5 text-center tracking-[0.5em] text-lg font-black text-slate-900 rounded-xl border border-slate-300 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition"
+                  />
+                </div>
+                {attemptsRemaining < 3 && attemptsRemaining > 0 && (
+                  <p className="text-[11px] text-amber-700 mt-1 font-medium">
+                    {attemptsRemaining} attempt{attemptsRemaining === 1 ? '' : 's'} remaining
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || otp.length !== 6}
+                className="w-full py-3 bg-slate-950 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verifying OTP...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Verify &amp; Continue</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+
+              {/* Resend Cooldown Controls */}
+              <div className="pt-2 text-center text-xs">
+                {cooldown > 0 ? (
+                  <p className="text-slate-400">
+                    Resend code in <span className="font-bold text-slate-700">{cooldown}s</span>
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={isLoading}
+                    className="text-amber-800 font-bold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Resend OTP</span>
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
+
+          {/* ========================================================================= */}
+          {/* STEP 3: NEW CUSTOMER REGISTRATION FORM                                   */}
+          {/* ========================================================================= */}
+          {step === 'profile_register' && (
+            <form onSubmit={handleRegisterProfile} className="space-y-3.5">
+              {/* Verified Mobile Confirmation */}
+              <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-slate-500" />
+                  <span className="text-xs font-bold text-slate-800">{displayPhone}</span>
+                </div>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Verified
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Full Name <span className="text-red-500">*</span>
+                </label>
+                <div className="relative flex items-center">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="e.g. Ramesh Verma"
+                    autoFocus
+                    required
+                    className="w-full pl-9 pr-3 py-2 text-xs font-medium rounded-xl border border-slate-300 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Email Address <span className="text-slate-400 font-normal">(Optional, for invoices)</span>
+                </label>
+                <div className="relative flex items-center">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="ramesh@builder.in"
+                    className="w-full pl-9 pr-3 py-2 text-xs font-medium rounded-xl border border-slate-300 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Company / Contractor Name <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <div className="relative flex items-center">
+                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="e.g. Ayodhya Infra Developers"
+                    className="w-full pl-9 pr-3 py-2 text-xs font-medium rounded-xl border border-slate-300 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  GSTIN <span className="text-slate-400 font-normal">(Optional, for B2B tax input)</span>
+                </label>
+                <div className="relative flex items-center">
+                  <FileText className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    maxLength={15}
+                    value={gstin}
+                    onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                    placeholder="09AAAAA0000A1Z5"
+                    className="w-full pl-9 pr-3 py-2 text-xs font-medium rounded-xl border border-slate-300 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 uppercase"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || !fullName.trim()}
+                className="w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-slate-950 font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-md cursor-pointer mt-2"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Creating Site Account...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Complete Registration</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* Footer Security Badges */}
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] text-slate-400">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>Encrypted Phone Auth · RLS Protected Customer Isolation</span>
           </div>
 
         </div>
@@ -188,5 +651,19 @@ export default function LoginPage() {
 
       <Footer />
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center">
+          <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+        </div>
+      }
+    >
+      <LoginContent />
+    </React.Suspense>
   );
 }

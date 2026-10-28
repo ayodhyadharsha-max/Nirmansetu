@@ -62,21 +62,21 @@ async function main() {
   console.log('\n[1] Testing Cart Calculations & Integer Paise Math...');
 
   runTest('Cart subtotal and tax calculation in pure integer paise', () => {
-    // 10 bags of UltraTech PPC cement @ ₹385 (38500 paise), GST 28%
+    // 10 bags of UltraTech PPC cement @ ₹385 (38500 paise), GST 18% (effective 22 Sept 2025)
     const unitPricePaise = 38500;
     const qty = 10;
     const subtotalPaise = unitPricePaise * qty;
     assert.strictEqual(subtotalPaise, 385000, 'Subtotal must be 385000 paise (₹3,850.00)');
 
-    const gstRatePct = 28.0;
+    const gstRatePct = 18.0;
     const rateBasisPoints = Math.round(gstRatePct * 100);
     const taxPaise = Math.round((subtotalPaise * rateBasisPoints) / 10000);
-    assert.strictEqual(taxPaise, 107800, 'Tax must be 107800 paise (₹1,078.00)');
+    assert.strictEqual(taxPaise, 69300, 'Tax must be 69300 paise (₹693.00 at 18% GST)');
 
     const deliveryFeePaise = 19900; // ₹199.00
     const discountPaise = 0;
     const totalPaise = subtotalPaise + taxPaise + deliveryFeePaise - discountPaise;
-    assert.strictEqual(totalPaise, 512700, 'Total must equal 512700 paise (₹5,127.00)');
+    assert.strictEqual(totalPaise, 474200, 'Total must equal 474200 paise (₹4,742.00)');
     assert.strictEqual(Number.isInteger(totalPaise), true, 'Total must be strictly integer');
   });
 

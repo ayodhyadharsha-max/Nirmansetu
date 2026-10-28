@@ -50,6 +50,7 @@ export async function POST(request: Request) {
       message: result.message,
     });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const status = err.statusCode || 400;
+    return NextResponse.json({ success: false, error: err.message }, { status });
   }
 }

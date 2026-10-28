@@ -16,7 +16,7 @@ interface ProductCatalogProps {
 }
 
 export const ProductCatalog: React.FC<ProductCatalogProps> = ({
-  items = SEED_CATALOG_ITEMS,
+  items = [],
   selectedCategory,
   selectedPincode,
   onAddToCart,
@@ -63,12 +63,23 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
 
         {/* Product Cards Grid */}
         {filteredItems.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
-            <div className="text-3xl">🏗️</div>
-            <h3 className="font-bold text-base text-slate-900">No products found in this category</h3>
-            <p className="text-xs text-slate-500">
-              Approved local stockists in Ayodhya are currently onboarding items for this category.
+          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-4">
+            <div className="text-4xl">🏗️</div>
+            <h3 className="font-black text-lg text-slate-900">
+              {selectedCategory ? 'No verified materials found in this category' : 'No materials currently available for instant dispatch'}
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-600 max-w-lg mx-auto">
+              Approved local stockists in Ayodhya are currently onboarding live inventory. All catalogue items are undergoing price and specification verification before online ordering is enabled.
             </p>
+            <div className="pt-2">
+              <button
+                onClick={onOpenEnquiry}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition"
+              >
+                <span>Request Custom Bulk Quotation</span>
+                <span className="text-sm font-black">→</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -10,6 +10,7 @@
  */
 
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { logAuditEvent, AuthenticatedUserSession } from '@/lib/auth/roles';
 import { SupplierPoStatus } from '@/types/database';
 
@@ -112,7 +113,7 @@ export const memorySupplierPos = new Map<string, StoredSupplierPo[]>();
 
 // Seed default approved local stockists in Ayodhya
 const DEFAULT_SUPPLIER_1: StoredSupplier = {
-  id: 's0000000-0000-0000-0000-000000000001',
+  id: 'f0000000-0000-0000-0000-000000000001',
   user_id: 'supplier-user-001',
   business_name: 'Awadh Building Material Mart',
   trade_name: 'Awadh Traders & Stockists',
@@ -141,7 +142,7 @@ const DEFAULT_SUPPLIER_1: StoredSupplier = {
 };
 
 const DEFAULT_SUPPLIER_2: StoredSupplier = {
-  id: 's0000000-0000-0000-0000-000000000002',
+  id: 'f0000000-0000-0000-0000-000000000002',
   user_id: 'supplier-user-002',
   business_name: 'Ramrajya Iron & Cement Depot',
   trade_name: 'Ramrajya Steel Mart',
@@ -188,7 +189,7 @@ memorySupplierPos.set(DEFAULT_SUPPLIER_1.id, [
     items: [
       {
         id: 'poi-1',
-        variant_id: 'v0000000-0000-0000-0000-000000000001',
+        variant_id: 'e0000000-0000-0000-0000-000000000001',
         product_title: 'UltraTech Super PPC Cement',
         variant_title: '50 kg Laminated Bag',
         quantity: 100,
@@ -208,7 +209,64 @@ memorySupplierPos.set(DEFAULT_SUPPLIER_1.id, [
 export async function registerSupplierApplication(
   input: SupplierRegistrationData
 ): Promise<{ success: boolean; supplierId: string; status: string; message: string }> {
-  const supplierId = `s0000000-0000-0000-0000-${Math.floor(100000000000 + Math.random() * 900000000000)}`;
+  const normalizedPhone = input.phone.trim();
+  const normalizedGstin = input.gstin?.trim().toUpperCase();
+
+  // 1. Check in-memory store for duplicates
+  for (const existing of Array.from(memorySuppliers.values())) {
+    if (existing.phone === normalizedPhone) {
+      const err = new Error(
+        `A supplier application with phone number ${normalizedPhone} already exists (Status: ${existing.verification_status}).`
+      );
+      (err as any).statusCode = 409;
+      throw err;
+    }
+    if (normalizedGstin && existing.gstin && existing.gstin.toUpperCase() === normalizedGstin) {
+      const err = new Error(
+        `A supplier application with GSTIN ${normalizedGstin} already exists (Status: ${existing.verification_status}).`
+      );
+      (err as any).statusCode = 409;
+      throw err;
+    }
+  }
+
+  // 2. Check remote database for duplicates if connected
+  try {
+    const supabase = createAdminClient();
+    const { data: existingPhone } = await supabase
+      .from('suppliers')
+      .select('id, verification_status')
+      .eq('phone', normalizedPhone)
+      .maybeSingle();
+
+    if (existingPhone) {
+      const err = new Error(
+        `A supplier application with phone number ${normalizedPhone} already exists (Status: ${existingPhone.verification_status}).`
+      );
+      (err as any).statusCode = 409;
+      throw err;
+    }
+
+    if (normalizedGstin) {
+      const { data: existingGstin } = await supabase
+        .from('suppliers')
+        .select('id, verification_status')
+        .eq('gstin', normalizedGstin)
+        .maybeSingle();
+
+      if (existingGstin) {
+        const err = new Error(
+          `A supplier application with GSTIN ${normalizedGstin} already exists (Status: ${existingGstin.verification_status}).`
+        );
+        (err as any).statusCode = 409;
+        throw err;
+      }
+    }
+  } catch (err: any) {
+    if (err.statusCode === 409) throw err;
+  }
+
+  const supplierId = `f0000000-0000-0000-0000-${Math.floor(100000000000 + Math.random() * 900000000000)}`;
 
   const newSupplier: StoredSupplier = {
     id: supplierId,
@@ -216,9 +274,9 @@ export async function registerSupplierApplication(
     business_name: input.businessName.trim(),
     trade_name: input.tradeName?.trim() || null,
     contact_person: input.contactPerson.trim(),
-    phone: input.phone.trim(),
+    phone: normalizedPhone,
     email: input.email.trim() || null,
-    gstin: input.gstin?.trim() || null,
+    gstin: normalizedGstin || null,
     pan: input.pan?.trim() || null,
     street_address: input.streetAddress.trim(),
     landmark: input.landmark?.trim() || null,
@@ -244,12 +302,19 @@ export async function registerSupplierApplication(
 
   memorySuppliers.set(supplierId, newSupplier);
 
-  // Sync to database
-  try {
-    const supabase = createServerSupabaseClient();
-    await supabase.from('suppliers').insert(newSupplier);
-  } catch {
-    // Handled
+  // Sync to database only for genuine non-simulated applications (preserve clean production database)
+  const isSimulation =
+    process.env.NODE_ENV === 'test' ||
+    normalizedPhone.startsWith('99999') ||
+    input.businessName.toLowerCase().includes('test');
+
+  if (!isSimulation) {
+    try {
+      const supabase = createAdminClient();
+      await supabase.from('suppliers').insert(newSupplier);
+    } catch {
+      // Handled
+    }
   }
 
   // Audit log

@@ -175,7 +175,9 @@ console.log('\n[4] Testing Security Boundaries & Safe Environment Templates...')
 runTest('.env.example template contains all required keys without real secrets', () => {
   const envExample = fs.readFileSync(path.resolve(__dirname, '../.env.example'), 'utf8');
   assert.strictEqual(envExample.includes('NEXT_PUBLIC_SUPABASE_URL'), true);
+  assert.strictEqual(envExample.includes('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY'), true);
   assert.strictEqual(envExample.includes('NEXT_PUBLIC_SUPABASE_ANON_KEY'), true);
+  assert.strictEqual(envExample.includes('SUPABASE_SECRET_KEY'), true);
   assert.strictEqual(envExample.includes('SUPABASE_SERVICE_ROLE_KEY'), true);
   assert.strictEqual(envExample.includes('NEXT_PUBLIC_BRAND_NAME'), true);
   assert.strictEqual(envExample.includes('your-anon-key-here'), true, 'Should contain placeholder strings');

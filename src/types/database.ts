@@ -47,14 +47,24 @@ export interface Profile {
   phone: string | null;
   email: string | null;
   business_name: string | null;
+  company_name?: string | null;
   gstin: string | null;
   pan: string | null;
+  alternate_phone?: string | null;
+  phone_number?: string | null;
   is_phone_verified: boolean;
   is_active: boolean;
   avatar_url: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface CustomerWishlistItem {
+  id: string;
+  user_id: string;
+  product_id: string;
+  created_at: string;
 }
 
 export interface ServiceZone {

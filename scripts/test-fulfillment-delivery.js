@@ -181,9 +181,9 @@ async function checkDestinationServiceability(pincode, orderSubtotalPaise = 0) {
 const memoryOrders = new Map();
 const memorySuppliers = new Map([
   [
-    's0000000-0000-0000-0000-000000000001',
+    'f0000000-0000-0000-0000-000000000001',
     {
-      id: 's0000000-0000-0000-0000-000000000001',
+      id: 'f0000000-0000-0000-0000-000000000001',
       business_name: 'Awadh Building Materials Mart',
       contact_person: 'Rajesh Agrawal',
       phone: '9450011223',
@@ -194,9 +194,9 @@ const memorySuppliers = new Map([
     },
   ],
   [
-    's0000000-0000-0000-0000-000000000002',
+    'f0000000-0000-0000-0000-000000000002',
     {
-      id: 's0000000-0000-0000-0000-000000000002',
+      id: 'f0000000-0000-0000-0000-000000000002',
       business_name: 'Ramrajya Cement & Iron Depot',
       contact_person: 'Virendra Maurya',
       phone: '9450099887',
@@ -758,7 +758,7 @@ async function main() {
     },
     items: [
       {
-        variant_id: 'v0000000-0000-0000-0000-000000000001',
+        variant_id: 'e0000000-0000-0000-0000-000000000001',
         product_title: 'UltraTech Super PPC Cement',
         variant_title: '50 kg Bag',
         quantity: 100,
@@ -774,8 +774,8 @@ async function main() {
   memoryOrders.set(testOrder.id, testOrder);
 
   // Verified suppliers
-  const supplier1Id = 's0000000-0000-0000-0000-000000000001'; // Awadh Material Mart (serves 224123)
-  const supplier2Id = 's0000000-0000-0000-0000-000000000002'; // Ramrajya Depot (serves 224001, 224133)
+  const supplier1Id = 'f0000000-0000-0000-0000-000000000001'; // Awadh Material Mart (serves 224123)
+  const supplier2Id = 'f0000000-0000-0000-0000-000000000002'; // Ramrajya Depot (serves 224001, 224133)
 
   const supplier1Session = {
     id: 'usr-sup-01',
@@ -969,7 +969,7 @@ async function main() {
       activePoId,
       [
         {
-          variant_id: 'v0000000-0000-0000-0000-000000000001',
+          variant_id: 'e0000000-0000-0000-0000-000000000001',
           ordered_quantity: 100,
           supplied_quantity: 98, // 2 bags short / damaged
           unit_cost_paise: 34500,

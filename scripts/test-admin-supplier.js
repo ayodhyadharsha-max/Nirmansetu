@@ -165,6 +165,20 @@ const testSupplierPos = new Map();
 const testAuditLogs = [];
 
 function registerSupplier(input) {
+  // Check duplicate phone or GSTIN
+  for (const s of testSuppliers.values()) {
+    if (s.phone === input.phone) {
+      const err = new Error(`A supplier application with phone number ${input.phone} already exists.`);
+      err.statusCode = 409;
+      throw err;
+    }
+    if (input.gstin && s.gstin && s.gstin.toUpperCase() === input.gstin.toUpperCase()) {
+      const err = new Error(`A supplier application with GSTIN ${input.gstin} already exists.`);
+      err.statusCode = 409;
+      throw err;
+    }
+  }
+
   const supplierId = `sup-${Date.now()}`;
   const supplier = {
     id: supplierId,
@@ -173,6 +187,7 @@ function registerSupplier(input) {
     phone: input.phone,
     email: input.email,
     pincode: input.pincode,
+    gstin: input.gstin || null,
     verification_status: 'pending', // MUST ALWAYS start as pending
     commission_rate_pct: 4.5,
     verified_at: null,
@@ -198,6 +213,53 @@ const newSupplier = registerSupplier({
 runTest('New supplier registration is strictly initialized with verification_status: "pending"', () => {
   assert.strictEqual(newSupplier.verification_status, 'pending');
   assert.strictEqual(newSupplier.verified_at, null);
+});
+
+runTest('Duplicate supplier phone registration is rejected with 409 Conflict', () => {
+  let blocked = false;
+  try {
+    registerSupplier({
+      businessName: 'Duplicate Phone Store',
+      contactPerson: 'Duplicate Contact',
+      phone: '9450000002', // Same as newSupplier!
+      email: 'duplicate@test.com',
+      pincode: '224001',
+    });
+  } catch (err) {
+    blocked = true;
+    assert.strictEqual(err.statusCode, 409);
+    assert.ok(err.message.includes('already exists'));
+  }
+  assert.strictEqual(blocked, true, 'Duplicate phone number must be rejected with 409');
+});
+
+runTest('Duplicate supplier GSTIN registration is rejected with 409 Conflict', () => {
+  const gstinSupplier = registerSupplier({
+    businessName: 'GSTIN Verified Mart',
+    contactPerson: 'Vikram Singh',
+    phone: '9450000088',
+    email: 'vikram@gstinmart.in',
+    pincode: '224123',
+    gstin: '09AABCV9999F1Z9',
+  });
+  assert.ok(gstinSupplier);
+
+  let blocked = false;
+  try {
+    registerSupplier({
+      businessName: 'Duplicate GSTIN Store',
+      contactPerson: 'Fake Contact',
+      phone: '9450000099', // Different phone
+      email: 'fake@test.com',
+      pincode: '224123',
+      gstin: '09AABCV9999F1Z9', // Duplicate GSTIN!
+    });
+  } catch (err) {
+    blocked = true;
+    assert.strictEqual(err.statusCode, 409);
+    assert.ok(err.message.includes('already exists'));
+  }
+  assert.strictEqual(blocked, true, 'Duplicate GSTIN must be rejected with 409');
 });
 
 function upsertSupplierProduct(supplierId, session, productData) {
@@ -244,7 +306,7 @@ runTest('Unverified pending supplier CANNOT publish inventory/stock', () => {
 // Admin approves supplier
 function updateSupplierStatus(supplierId, newStatus, adminSession) {
   if (adminSession.role !== 'admin') {
-    const error = new Error('Unauthorized');
+    const error = new Error('Unauthorized: Only administrators can update supplier status.');
     error.statusCode = 403;
     throw error;
   }
@@ -263,6 +325,43 @@ function updateSupplierStatus(supplierId, newStatus, adminSession) {
   return supplier;
 }
 
+runTest('Unauthorized non-admin caller cannot approve or reject supplier applications', () => {
+  const customerSession = { id: 'usr-cust-01', role: 'customer' };
+  let blocked = false;
+  try {
+    updateSupplierStatus(newSupplier.id, 'verified', customerSession);
+  } catch (err) {
+    blocked = true;
+    assert.strictEqual(err.statusCode, 403);
+  }
+  assert.strictEqual(blocked, true, 'Non-admin must not approve supplier');
+});
+
+runTest('Rejected or suspended supplier cannot publish inventory', () => {
+  const rejectedSupplier = registerSupplier({
+    businessName: 'Rejected Cement Depot',
+    contactPerson: 'Anil Kumar',
+    phone: '9450000077',
+    email: 'anil@rejected.com',
+    pincode: '224001',
+  });
+  updateSupplierStatus(rejectedSupplier.id, 'rejected', { id: 'adm-1', role: 'admin' });
+
+  const rejectedSession = { id: 'usr-rejected', role: 'supplier', supplierId: rejectedSupplier.id };
+  let blocked = false;
+  try {
+    upsertSupplierProduct(rejectedSupplier.id, rejectedSession, {
+      variantId: 'v2',
+      supplierCostPaise: 34000,
+      stockQuantity: 200,
+    });
+  } catch (err) {
+    blocked = true;
+    assert.ok(err.message.includes('Only verified suppliers can publish inventory'));
+  }
+  assert.strictEqual(blocked, true, 'Rejected supplier must not publish inventory');
+});
+
 runTest('Admin approves pending supplier (transitions to "verified")', () => {
   const adminSession = { id: 'adm-1', role: 'admin' };
   const approved = updateSupplierStatus(newSupplier.id, 'verified', adminSession);
@@ -273,7 +372,7 @@ runTest('Admin approves pending supplier (transitions to "verified")', () => {
 runTest('Approved supplier can now publish inventory stock & wholesale cost', () => {
   const approvedSession = { id: 'usr-approved', role: 'supplier', supplierId: newSupplier.id };
   const item = upsertSupplierProduct(newSupplier.id, approvedSession, {
-    variantId: 'v0000000-0000-0000-0000-000000000001',
+    variantId: 'e0000000-0000-0000-0000-000000000001',
     supplierCostPaise: 35000, // ₹350 wholesale cost
     stockQuantity: 500,
   });

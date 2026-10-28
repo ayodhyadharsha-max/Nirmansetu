@@ -22,8 +22,8 @@ export async function POST(request: Request) {
     }
 
     const adminApiSecret = request.headers.get('x-admin-key');
-    const expectedSecret = process.env.ADMIN_API_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (adminApiSecret && expectedSecret && adminApiSecret === expectedSecret) {
+    const expectedSecret = process.env.ADMIN_API_KEY;
+    if (adminApiSecret && expectedSecret && !expectedSecret.includes('placeholder') && adminApiSecret === expectedSecret) {
       isAdmin = true;
     }
 

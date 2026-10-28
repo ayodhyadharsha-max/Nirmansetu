@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requestOrderReturn } from '@/lib/orders/service';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getAuthenticatedServerSession } from '@/lib/auth/roles';
 
 interface Params {
   params: { id: string };
@@ -10,7 +10,6 @@ interface Params {
 const ReturnSchema = z.object({
   returnReason: z.string().trim().min(5, 'Please select or provide a valid reason for return'),
   notes: z.string().trim().max(500).optional(),
-  userId: z.string().optional(),
 });
 
 export async function POST(request: Request, { params }: Params) {
@@ -26,23 +25,16 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
 
-    let userId = parsed.data.userId;
-    try {
-      const supabase = createServerSupabaseClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) userId = user.id;
-    } catch {
-      // Handled
-    }
+    const session = await getAuthenticatedServerSession(request);
 
-    if (!userId) {
+    if (!session) {
       return NextResponse.json(
-        { success: false, error: 'Authentication required to submit return request' },
+        { success: false, error: 'Authentication required to submit return request. Please log in.' },
         { status: 401 }
       );
     }
 
-    const res = await requestOrderReturn(orderId, userId, parsed.data.returnReason, parsed.data.notes);
+    const res = await requestOrderReturn(orderId, session.id, parsed.data.returnReason, parsed.data.notes);
 
     if (!res.success) {
       return NextResponse.json(

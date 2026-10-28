@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { cancelOrder } from '@/lib/orders/service';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getAuthenticatedServerSession } from '@/lib/auth/roles';
 
 interface Params {
   params: { id: string };
@@ -9,7 +9,6 @@ interface Params {
 
 const CancelSchema = z.object({
   reason: z.string().trim().min(5, 'Please provide a reason for cancellation (at least 5 characters)'),
-  userId: z.string().optional(),
 });
 
 export async function POST(request: Request, { params }: Params) {
@@ -25,23 +24,21 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
 
-    let userId = parsed.data.userId;
-    try {
-      const supabase = createServerSupabaseClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) userId = user.id;
-    } catch {
-      // Handled
-    }
+    const session = await getAuthenticatedServerSession(request);
 
-    if (!userId) {
+    if (!session) {
       return NextResponse.json(
-        { success: false, error: 'Authentication required to cancel an order' },
+        { success: false, error: 'Authentication required to cancel an order. Please log in.' },
         { status: 401 }
       );
     }
 
-    const res = await cancelOrder(orderId, userId, parsed.data.reason);
+    const res = await cancelOrder(
+      orderId,
+      session.id,
+      parsed.data.reason,
+      session.role === 'admin'
+    );
 
     if (!res.success) {
       return NextResponse.json(

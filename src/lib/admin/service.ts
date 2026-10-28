@@ -53,16 +53,33 @@ export const memoryPincodes = new Map<string, ServicePincodeConfig>([
   ['224229', { pincode: '224229', area_name: 'Bikapur Construction Zone', is_serviceable: true, estimated_delivery_minutes: 180, standard_delivery_fee_paise: 49900, express_available: false, express_delivery_fee_paise: 0 }],
 ]);
 
+async function withQueryTimeout<T>(promise: PromiseLike<T>, timeoutMs = 1200, fallbackVal: T): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallbackVal), timeoutMs);
+  });
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    clearTimeout(timer!);
+    return result;
+  } catch {
+    clearTimeout(timer!);
+    return fallbackVal;
+  }
+}
+
 /**
  * Computes live, verified dashboard metrics directly from order transactions.
  */
 export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   const allOrders: StoredOrderRecord[] = Array.from(memoryOrders.values());
 
-  // Also query DB if active
+  // Also query DB if active with strict timeout to prevent hangs
   try {
     const supabase = createServerSupabaseClient();
-    const { data: dbOrders } = await supabase.from('orders').select('*');
+    const query = supabase.from('orders').select('*');
+    const res = await withQueryTimeout<any>(query, 1200, { data: null });
+    const dbOrders = res?.data;
     if (dbOrders) {
       for (const dbo of dbOrders) {
         if (!allOrders.some((o) => o.id === dbo.id)) {

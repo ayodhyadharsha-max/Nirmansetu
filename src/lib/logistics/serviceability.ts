@@ -241,18 +241,18 @@ export async function checkDestinationServiceability(
     };
   }
 
-  // Lookup in memory or database
-  let config = memoryServicePincodes.get(cleanPin);
+  // Lookup in database first (single source of truth for live serviceability)
+  let config: ServicePincodeConfig | undefined;
 
-  if (!config) {
-    try {
-      const supabase = createServerSupabaseClient();
-      const { data } = await supabase
-        .from('service_pincodes')
-        .select('*')
-        .eq('pincode', cleanPin)
-        .maybeSingle();
+  try {
+    const supabase = createServerSupabaseClient();
+    const { data, error } = await supabase
+      .from('service_pincodes')
+      .select('*')
+      .eq('pincode', cleanPin)
+      .maybeSingle();
 
+    if (!error) {
       if (data) {
         config = {
           pincode: data.pincode,
@@ -271,11 +271,27 @@ export async function checkDestinationServiceability(
           max_vehicle_capacity: data.max_vehicle_capacity || 'tata_ace',
           updated_at: data.updated_at || new Date().toISOString(),
         };
-        memoryServicePincodes.set(cleanPin, config);
+      } else {
+        // Database successfully checked: no active/serviceable pincode matches this PIN
+        return {
+          serviceable: false,
+          pincode: cleanPin,
+          unavailableNotice: {
+            message: `Delivery to PIN code ${cleanPin} is currently unavailable. All regional service hubs are presently inactive pending local fleet onboarding.`,
+            closestHubs: [],
+            bulkInquiryPrompt:
+              'If you are undertaking a multi-ton construction project in this area, you can submit a Bulk RFQ for dedicated direct-from-mill truckload dispatch.',
+          },
+        };
       }
-    } catch {
-      // Handled
     }
+  } catch {
+    // Handled
+  }
+
+  // Fallback to in-memory configuration only if database lookup errored
+  if (!config) {
+    config = memoryServicePincodes.get(cleanPin);
   }
 
   // If PIN is not found or not marked serviceable

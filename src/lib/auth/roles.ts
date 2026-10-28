@@ -51,8 +51,8 @@ export async function getAuthenticatedServerSession(request?: Request): Promise<
   // 1. Check header-based admin key for privileged background/server scripts
   if (request) {
     const adminKey = request.headers.get('x-admin-key');
-    const expectedKey = process.env.ADMIN_API_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (adminKey && expectedKey && adminKey === expectedKey) {
+    const expectedKey = process.env.ADMIN_API_KEY;
+    if (adminKey && expectedKey && !expectedKey.includes('placeholder') && adminKey === expectedKey) {
       return {
         id: 'admin-system-server',
         email: 'admin.system@nirmansetu.in',
@@ -62,42 +62,80 @@ export async function getAuthenticatedServerSession(request?: Request): Promise<
       };
     }
 
-    // Check test header for local automated tests
-    const testRole = request.headers.get('x-test-role') as UserRole | null;
-    const testUserId = request.headers.get('x-test-user-id');
-    const testSupplierId = request.headers.get('x-test-supplier-id');
+    // Check test headers ONLY during internal automated test suite execution (strictly blocked on web/HTTP servers)
+    const isTestEnv = process.env.NODE_ENV === 'test';
+    if (isTestEnv) {
+      const testRole = request.headers.get('x-test-role') as UserRole | null;
+      const testUserId = request.headers.get('x-test-user-id');
+      const testSupplierId = request.headers.get('x-test-supplier-id');
 
-    if (testRole && testUserId) {
-      return {
-        id: testUserId,
-        email: `${testRole}.test@nirmansetu.in`,
-        role: testRole,
-        isActive: true,
-        fullName: `Test ${testRole.toUpperCase()}`,
-        supplierId: testSupplierId || (testRole === 'supplier' ? 's0000000-0000-0000-0000-000000000001' : undefined),
-        supplierStatus: 'verified',
-      };
+      if (testRole && testUserId) {
+        return {
+          id: testUserId,
+          email: `${testRole}.test@nirmansetu.in`,
+          role: testRole,
+          isActive: true,
+          fullName: `Test ${testRole.toUpperCase()}`,
+          supplierId: testSupplierId || (testRole === 'supplier' ? 'f0000000-0000-0000-0000-000000000001' : undefined),
+          supplierStatus: 'verified',
+        };
+      }
     }
   }
 
   // 2. Query Supabase authenticated user and profiles table
   try {
     const supabase = createServerSupabaseClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+    const authHeader = request?.headers.get('authorization');
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
 
-    if (authError || !user) {
+    let user = null;
+    if (bearerToken) {
+      const { data, error } = await supabase.auth.getUser(bearerToken);
+      if (!error && data?.user) {
+        user = data.user;
+      } else {
+        try {
+          const { createAdminClient } = await import('@/lib/supabase/admin');
+          const adminClient = createAdminClient();
+          const { data: adminData, error: adminErr } = await adminClient.auth.getUser(bearerToken);
+          if (!adminErr && adminData?.user) {
+            user = adminData.user;
+          }
+        } catch {
+          // Admin client fallback error non-fatal
+        }
+      }
+    } else {
+      const { data, error } = await supabase.auth.getUser();
+      if (!error && data?.user) {
+        user = data.user;
+      }
+    }
+
+    if (!user) {
       return null;
     }
 
-    // Fetch profile
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
+    // Fetch profile reliably (use admin client if available to prevent RLS false-negatives on Bearer tokens)
+    let profile = null;
+    try {
+      const { createAdminClient } = await import('@/lib/supabase/admin');
+      const adminClient = createAdminClient();
+      const { data } = await adminClient
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      profile = data;
+    } catch {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      profile = data;
+    }
 
     const role: UserRole = profile?.role || 'customer';
     const isActive = profile?.is_active ?? true;
@@ -106,15 +144,29 @@ export async function getAuthenticatedServerSession(request?: Request): Promise<
     let supplierStatus: 'pending' | 'verified' | 'suspended' | 'rejected' | undefined;
 
     if (role === 'supplier') {
-      const { data: supplier } = await supabase
-        .from('suppliers')
-        .select('id, verification_status')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      try {
+        const { createAdminClient } = await import('@/lib/supabase/admin');
+        const adminClient = createAdminClient();
+        const { data: supplier } = await adminClient
+          .from('suppliers')
+          .select('id, verification_status')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (supplier) {
+          supplierId = supplier.id;
+          supplierStatus = supplier.verification_status;
+        }
+      } catch {
+        const { data: supplier } = await supabase
+          .from('suppliers')
+          .select('id, verification_status')
+          .eq('user_id', user.id)
+          .maybeSingle();
 
-      if (supplier) {
-        supplierId = supplier.id;
-        supplierStatus = supplier.verification_status;
+        if (supplier) {
+          supplierId = supplier.id;
+          supplierStatus = supplier.verification_status;
+        }
       }
     }
 

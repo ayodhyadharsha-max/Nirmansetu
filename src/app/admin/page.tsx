@@ -31,9 +31,19 @@ import {
   AlertCircle,
   Check,
   RotateCcw,
+  FolderTree,
+  ShieldAlert,
+  Plus,
+  Lock,
+  Unlock,
+  UserX,
+  UserCheck,
+  Heart,
 } from 'lucide-react';
 import { BRAND_CONFIG, AYODHYA_REGIONAL_HUBS } from '@/config/brand';
-import { SEED_PRODUCTS, SEED_CATEGORIES } from '@/lib/catalog/seed-data';
+import { SEED_PRODUCTS, SEED_CATEGORIES, SEED_BRANDS } from '@/lib/catalog/seed-data';
+import { createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { formatPaiseToRupees } from '@/lib/money';
 
 interface DashboardMetrics {
   totalRevenuePaise: number;
@@ -46,11 +56,52 @@ interface DashboardMetrics {
 
 export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'fulfillment' | 'quotations' | 'orders' | 'suppliers' | 'pincodes' | 'products' | 'reports' | 'audit'
+    'overview' | 'fulfillment' | 'quotations' | 'orders' | 'customers' | 'categories' | 'suppliers' | 'pincodes' | 'products' | 'wishlist' | 'reports' | 'audit'
   >('overview');
 
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [orders, setOrders] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [categories, setCategories] = useState<any[]>([]);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [categorySubTab, setCategorySubTab] = useState<'categories' | 'brands'>('categories');
+  const [newCategory, setNewCategory] = useState({
+    name: '',
+    slug: '',
+    description: '',
+    defaultGstRatePct: 18,
+  });
+
+  const [brandsList, setBrandsList] = useState<any[]>([]);
+  const [brandModalOpen, setBrandModalOpen] = useState(false);
+  const [brandSearch, setBrandSearch] = useState('');
+  const [newBrand, setNewBrand] = useState({
+    name: '',
+    slug: '',
+    description: '',
+    originCountry: 'India',
+    logoUrl: '',
+  });
+
+  const [wishlistReport, setWishlistReport] = useState<any | null>(null);
+
+  const [productsList, setProductsList] = useState<any[]>([]);
+  const [productSearch, setProductSearch] = useState('');
+  const [productCategoryFilter, setProductCategoryFilter] = useState('');
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [newProduct, setNewProduct] = useState({
+    title: '',
+    brandName: '',
+    categorySlug: 'cement-construction-materials',
+    categoryName: 'Cement & Construction Materials',
+    sellingPriceRupees: '',
+    mrpRupees: '',
+    unit: 'Bag (50 Kg)',
+    minOrderQuantity: 1,
+    gstRatePct: 28,
+  });
+
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [pincodes, setPincodes] = useState<any[]>([]);
   const [serviceZones, setServiceZones] = useState<any[]>([]);
@@ -61,9 +112,16 @@ export default function AdminDashboardPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Authentication & Session state
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+
   // Modal states for fulfillment actions
   const [selectedOrderForPo, setSelectedOrderForPo] = useState<any | null>(null);
-  const [poSupplierId, setPoSupplierId] = useState('s0000000-0000-0000-0000-000000000001');
+  const [poSupplierId, setPoSupplierId] = useState('f0000000-0000-0000-0000-000000000001');
 
   const [selectedOrderForDispatch, setSelectedOrderForDispatch] = useState<any | null>(null);
   const [dispatchForm, setDispatchForm] = useState({
@@ -79,7 +137,7 @@ export default function AdminDashboardPage() {
   const [otpNotes, setOtpNotes] = useState('Customer inspected all cement bags & rebar bundles. All intact.');
 
   const [selectedOrderForReassign, setSelectedOrderForReassign] = useState<any | null>(null);
-  const [reassignSupplierId, setReassignSupplierId] = useState('s0000000-0000-0000-0000-000000000002');
+  const [reassignSupplierId, setReassignSupplierId] = useState('f0000000-0000-0000-0000-000000000002');
   const [reassignReason, setReassignReason] = useState('Previous stockist reported insufficient rebar stock.');
 
   const [selectedOrderForFailure, setSelectedOrderForFailure] = useState<any | null>(null);
@@ -96,32 +154,111 @@ export default function AdminDashboardPage() {
     terms: 'Prices inclusive of GST. Transit insurance included. Site unloading at ground level.',
   });
 
-  const adminHeaders = {
-    'x-test-role': 'admin',
-    'x-test-user-id': 'admin-super-001',
+  const getEffectiveHeaders = () => {
+    const headers: Record<string, string> = {};
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    return headers;
   };
+
+  // Auth gate check
+  useEffect(() => {
+    let isMounted = true;
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        setAuthChecking(false);
+      }
+    }, 1500);
+
+    async function checkAdminAuth() {
+      setAuthChecking(true);
+      try {
+        const supabase = createBrowserSupabaseClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session?.user) {
+          if (isMounted) {
+            setAuthError('Authentication required. You must sign in with an authorized Administrator account.');
+            setAuthChecking(false);
+          }
+          return;
+        }
+
+        if (isMounted) {
+          setAccessToken(session.access_token);
+          setCurrentUser(session.user);
+        }
+
+        // Fetch user profile to check role
+        const profileRes = await fetch('/api/auth/profile', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const profileData = await profileRes.json();
+        const role = profileData?.profile?.role || (session.user.user_metadata as any)?.role || 'customer';
+        if (isMounted) {
+          setUserRole(role);
+          if (role !== 'admin') {
+            setAuthError(`Access Restricted (403): Your account (${session.user.phone || session.user.email}) is registered as '${role}'. Only verified Administrators can access the operations dashboard.`);
+          }
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          setAuthError(err.message || 'Failed to verify administrator status');
+        }
+      } finally {
+        if (isMounted) {
+          setAuthChecking(false);
+        }
+      }
+    }
+
+    checkAdminAuth();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimer);
+    };
+  }, []);
 
   const fetchAdminData = async () => {
     setLoading(true);
     setNotice(null);
     try {
+      const headers = getEffectiveHeaders();
+
       // 1. Metrics
-      const resMetrics = await fetch('/api/admin/metrics', { headers: adminHeaders });
+      const resMetrics = await fetch('/api/admin/metrics', { headers });
       const dataMetrics = await resMetrics.json();
       if (dataMetrics.success) setMetrics(dataMetrics.metrics);
 
       // 2. Orders
-      const resOrders = await fetch('/api/admin/orders', { headers: adminHeaders });
+      const resOrders = await fetch('/api/admin/orders', { headers });
       const dataOrders = await resOrders.json();
       if (dataOrders.success) setOrders(dataOrders.orders || []);
 
-      // 3. Suppliers
-      const resSuppliers = await fetch('/api/admin/suppliers', { headers: adminHeaders });
+      // 3. Customers
+      const resCustomers = await fetch('/api/admin/customers', { headers });
+      const dataCustomers = await resCustomers.json();
+      if (dataCustomers.success) setCustomers(dataCustomers.customers || []);
+
+      // 4. Categories
+      const resCategories = await fetch('/api/admin/categories', { headers });
+      const dataCategories = await resCategories.json();
+      if (dataCategories.success) setCategories(dataCategories.categories || []);
+
+      // 5. Products
+      const resProducts = await fetch('/api/admin/products', { headers });
+      const dataProducts = await resProducts.json();
+      if (dataProducts.success) setProductsList(dataProducts.products || []);
+
+      // 6. Suppliers
+      const resSuppliers = await fetch('/api/admin/suppliers', { headers });
       const dataSuppliers = await resSuppliers.json();
       if (dataSuppliers.success) setSuppliers(dataSuppliers.suppliers || []);
 
-      // 4. Service Zones & Pincodes
-      const resZones = await fetch('/api/admin/serviceability', { headers: adminHeaders });
+      // 7. Service Zones & Pincodes
+      const resZones = await fetch('/api/admin/serviceability', { headers });
       const dataZones = await resZones.json();
       if (dataZones.success && dataZones.zones) {
         setServiceZones(dataZones.zones);
@@ -138,20 +275,30 @@ export default function AdminDashboardPage() {
         );
       }
 
-      // 5. Bulk Enquiries
-      const resEnquiries = await fetch('/api/admin/enquiries', { headers: adminHeaders });
+      // 8. Bulk Enquiries
+      const resEnquiries = await fetch('/api/admin/enquiries', { headers });
       const dataEnquiries = await resEnquiries.json();
       if (dataEnquiries.success) setEnquiries(dataEnquiries.enquiries || []);
 
-      // 6. Quotations
-      const resQuotes = await fetch('/api/quotations', { headers: adminHeaders });
+      // 9. Quotations
+      const resQuotes = await fetch('/api/quotations', { headers });
       const dataQuotes = await resQuotes.json();
       if (dataQuotes.success) setQuotations(dataQuotes.quotations || []);
 
-      // 7. Audit Logs
-      const resAudit = await fetch('/api/admin/audit-logs', { headers: adminHeaders });
+      // 10. Audit Logs
+      const resAudit = await fetch('/api/admin/audit-logs', { headers });
       const dataAudit = await resAudit.json();
       if (dataAudit.success) setAuditLogs(dataAudit.logs || []);
+
+      // 11. Brands
+      const resBrands = await fetch('/api/admin/brands', { headers });
+      const dataBrands = await resBrands.json();
+      if (dataBrands.success) setBrandsList(dataBrands.brands || []);
+
+      // 12. Wishlist Analytics
+      const resWishlist = await fetch('/api/admin/wishlist', { headers });
+      const dataWishlist = await resWishlist.json();
+      if (dataWishlist.success) setWishlistReport(dataWishlist.report || null);
     } catch (err: any) {
       setNotice({ type: 'error', message: err.message || 'Failed to load administrator data' });
     } finally {
@@ -160,8 +307,203 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
-    fetchAdminData();
-  }, []);
+    if (!authChecking && !authError) {
+      fetchAdminData();
+    }
+  }, [authChecking, authError]);
+
+  // Customer status toggle
+  const handleToggleCustomerStatus = async (userId: string, currentActive: boolean) => {
+    setActionLoading(true);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/admin/customers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
+        body: JSON.stringify({ userId, isActive: !currentActive }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update customer status');
+      setNotice({
+        type: 'success',
+        message: `Customer account ${!currentActive ? 'reactivated' : 'suspended'} successfully.`,
+      });
+      fetchAdminData();
+    } catch (err: any) {
+      setNotice({ type: 'error', message: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Category creation
+  const handleCreateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/admin/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
+        body: JSON.stringify(newCategory),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to create category');
+      setNotice({ type: 'success', message: `Category "${newCategory.name}" added successfully.` });
+      setCategoryModalOpen(false);
+      setNewCategory({ name: '', slug: '', description: '', defaultGstRatePct: 18 });
+      fetchAdminData();
+    } catch (err: any) {
+      setNotice({ type: 'error', message: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Category active toggle
+  const handleToggleCategory = async (categoryId: string, currentActive: boolean) => {
+    setActionLoading(true);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/admin/categories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
+        body: JSON.stringify({ categoryId, isActive: !currentActive }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update category');
+      setNotice({
+        type: 'success',
+        message: `Category status updated successfully.`,
+      });
+      fetchAdminData();
+    } catch (err: any) {
+      setNotice({ type: 'error', message: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Brand creation
+  const handleCreateBrand = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/admin/brands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
+        body: JSON.stringify(newBrand),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to register brand');
+      setNotice({ type: 'success', message: `Brand "${newBrand.name}" registered successfully.` });
+      setBrandModalOpen(false);
+      setNewBrand({
+        name: '',
+        slug: '',
+        description: '',
+        originCountry: 'India',
+        logoUrl: '',
+      });
+      fetchAdminData();
+    } catch (err: any) {
+      setNotice({ type: 'error', message: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Brand active toggle
+  const handleToggleBrand = async (brandId: string, currentActive: boolean) => {
+    setActionLoading(true);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/admin/brands', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
+        body: JSON.stringify({ brandId, isActive: !currentActive }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update brand');
+      setNotice({ type: 'success', message: 'Brand status updated.' });
+      fetchAdminData();
+    } catch (err: any) {
+      setNotice({ type: 'error', message: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Product creation
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    setNotice(null);
+    try {
+      const sellingPricePaise = Math.round(parseFloat(newProduct.sellingPriceRupees) * 100);
+      const mrpPaise = newProduct.mrpRupees
+        ? Math.round(parseFloat(newProduct.mrpRupees) * 100)
+        : sellingPricePaise;
+
+      const res = await fetch('/api/admin/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
+        body: JSON.stringify({
+          title: newProduct.title,
+          brandName: newProduct.brandName,
+          categoryName: newProduct.categoryName,
+          categorySlug: newProduct.categorySlug,
+          sellingPricePaise,
+          mrpPaise,
+          unit: newProduct.unit,
+          minOrderQuantity: newProduct.minOrderQuantity,
+          gstRatePct: newProduct.gstRatePct,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to create product');
+      setNotice({ type: 'success', message: `Product "${newProduct.title}" added to catalog.` });
+      setProductModalOpen(false);
+      setNewProduct({
+        title: '',
+        brandName: '',
+        categorySlug: 'cement-construction-materials',
+        categoryName: 'Cement & Construction Materials',
+        sellingPriceRupees: '',
+        mrpRupees: '',
+        unit: 'Bag (50 Kg)',
+        minOrderQuantity: 1,
+        gstRatePct: 28,
+      });
+      fetchAdminData();
+    } catch (err: any) {
+      setNotice({ type: 'error', message: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Product active toggle
+  const handleToggleProduct = async (productId: string, currentDeliverable: boolean) => {
+    setActionLoading(true);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/admin/products', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
+        body: JSON.stringify({ productId, isDeliverable: !currentDeliverable }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update product');
+      setNotice({ type: 'success', message: 'Product deliverability status updated.' });
+      fetchAdminData();
+    } catch (err: any) {
+      setNotice({ type: 'error', message: err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // Dispatch vehicle action
   const handleDispatch = async (e: React.FormEvent) => {
@@ -172,7 +514,7 @@ export default function AdminDashboardPage() {
     try {
       const res = await fetch('/api/admin/fulfillment/dispatch', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders },
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
         body: JSON.stringify({
           orderId: selectedOrderForDispatch.id,
           poId: selectedOrderForDispatch.po_id || '',
@@ -203,7 +545,7 @@ export default function AdminDashboardPage() {
     try {
       const res = await fetch('/api/admin/fulfillment/verify-delivery', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders },
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
         body: JSON.stringify({
           orderId: selectedOrderForOtp.id,
           deliveryOtp: enteredOtp.trim(),
@@ -235,7 +577,7 @@ export default function AdminDashboardPage() {
     try {
       const res = await fetch('/api/admin/fulfillment/failed-delivery', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders },
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
         body: JSON.stringify({
           orderId: selectedOrderForFailure.id,
           failureReason: failureReason.trim(),
@@ -266,7 +608,7 @@ export default function AdminDashboardPage() {
     try {
       const res = await fetch('/api/admin/fulfillment/reassign-supplier', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders },
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
         body: JSON.stringify({
           orderId: selectedOrderForReassign.id,
           newSupplierId: reassignSupplierId,
@@ -297,7 +639,7 @@ export default function AdminDashboardPage() {
     try {
       const res = await fetch('/api/admin/fulfillment/assign-supplier', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders },
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
         body: JSON.stringify({
           orderId: selectedOrderForPo.id,
           supplierId: poSupplierId,
@@ -349,7 +691,7 @@ export default function AdminDashboardPage() {
 
       const res = await fetch('/api/quotations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminHeaders },
+        headers: { 'Content-Type': 'application/json', ...getEffectiveHeaders() },
         body: JSON.stringify({
           enquiryId: selectedEnquiryForQuote.id,
           clientName: selectedEnquiryForQuote.contact_name,
@@ -381,6 +723,45 @@ export default function AdminDashboardPage() {
     }
   };
 
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs text-slate-400 font-medium">Verifying Administrator Authorization...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center space-y-4">
+          <div className="w-12 h-12 bg-red-950 text-red-400 rounded-2xl flex items-center justify-center mx-auto border border-red-800">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold text-white">Administrator Access Required</h2>
+          <p className="text-xs text-slate-400 leading-relaxed">{authError}</p>
+          <div className="pt-2 flex flex-col gap-2">
+            <Link
+              href="/login?redirect=/admin"
+              className="py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs transition"
+            >
+              Sign In With Verified Administrator Mobile OTP
+            </Link>
+            <Link
+              href="/"
+              className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition"
+            >
+              Return to Storefront
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -392,7 +773,9 @@ export default function AdminDashboardPage() {
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span>NirmanSetu Ayodhya • Operations & Logistics Command</span>
               <span>•</span>
-              <span className="text-slate-400 font-mono text-[11px]">Role: Administrator</span>
+              <span className="text-slate-400 font-mono text-[11px]">
+                {currentUser ? `Admin: ${currentUser.phone || currentUser.email || currentUser.full_name}` : 'Role: Administrator'}
+              </span>
             </div>
             <h1 className="text-2xl font-black tracking-tight text-white">
               Supplier Fulfilment & Delivery Control Center
@@ -447,9 +830,12 @@ export default function AdminDashboardPage() {
             { id: 'fulfillment', label: `Fulfilment & Dispatch (${orders.length})`, icon: Truck },
             { id: 'quotations', label: `Quotations & RFQs (${enquiries.length})`, icon: FileText },
             { id: 'orders', label: `All Orders (${orders.length})`, icon: ShoppingCart },
+            { id: 'customers', label: `Customers (${customers.length})`, icon: Users },
+            { id: 'categories', label: `Categories & Brands (${categories.length + (brandsList.length || SEED_BRANDS.length)})`, icon: FolderTree },
+            { id: 'products', label: `Catalog (${productsList.length || SEED_PRODUCTS.length})`, icon: Package },
             { id: 'suppliers', label: `Suppliers (${suppliers.length})`, icon: Building2 },
             { id: 'pincodes', label: `Service Zones (${pincodes.length})`, icon: MapPin },
-            { id: 'products', label: `Catalog (${SEED_PRODUCTS.length})`, icon: Package },
+            { id: 'wishlist', label: `Wishlist Demand (${wishlistReport?.totalWishlistEntries || 0})`, icon: Heart },
             { id: 'reports', label: 'CSV Reports', icon: FileSpreadsheet },
             { id: 'audit', label: `Audit Trail (${auditLogs.length})`, icon: History },
           ].map((tab) => {
@@ -1308,34 +1694,965 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 7: CATALOG */}
-        {activeTab === 'products' && (
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden text-xs">
-            <div className="p-4 border-b border-slate-100">
-              <h3 className="font-bold uppercase tracking-wider text-slate-800">Approved Public Catalog</h3>
+        {/* TAB: CUSTOMER MANAGEMENT */}
+        {activeTab === 'customers' && (
+          <div className="space-y-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 w-full sm:w-80 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50">
+                <Search className="w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by customer name, phone, or company..."
+                  value={customerSearch}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  className="bg-transparent border-none outline-none w-full text-slate-900 placeholder-slate-400 text-xs"
+                />
+              </div>
+              <div className="text-slate-500 font-medium text-right w-full sm:w-auto">
+                Total Verified Accounts: <span className="font-bold text-slate-900">{customers.length}</span>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                  <tr>
-                    <th className="py-3 px-4 font-semibold">Product Title & Brand</th>
-                    <th className="py-3 px-4 font-semibold">Category</th>
-                    <th className="py-3 px-4 font-semibold">Selling Price</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {SEED_PRODUCTS.map((prod) => (
-                    <tr key={prod.product_id} className="hover:bg-slate-50/70">
-                      <td className="py-3 px-4 font-bold text-slate-900">{prod.product_title}</td>
-                      <td className="py-3 px-4 text-slate-600">{prod.category_name}</td>
-                      <td className="py-3 px-4 font-bold text-slate-900">
-                        ₹{(prod.selling_price_paise / 100).toFixed(2)}
-                      </td>
+
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden text-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4 font-semibold">Customer / Site Owner</th>
+                      <th className="py-3 px-4 font-semibold">Account Role</th>
+                      <th className="py-3 px-4 font-semibold">Company & GSTIN</th>
+                      <th className="py-3 px-4 font-semibold">Orders</th>
+                      <th className="py-3 px-4 font-semibold">Registered</th>
+                      <th className="py-3 px-4 font-semibold">Status</th>
+                      <th className="py-3 px-4 font-semibold text-right">Access Controls</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {customers
+                      .filter((c) =>
+                        !customerSearch
+                          ? true
+                          : (c.full_name || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
+                            (c.phone || '').includes(customerSearch) ||
+                            (c.business_name || '').toLowerCase().includes(customerSearch.toLowerCase())
+                      )
+                      .map((c) => (
+                        <tr key={c.id} className="hover:bg-slate-50/70">
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-slate-900">{c.full_name || 'Customer'}</div>
+                            <div className="text-[11px] text-slate-500 flex items-center gap-1 font-mono">
+                              <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                              <span>{c.phone || 'Phone verified'}</span>
+                            </div>
+                            {c.email && <div className="text-[10px] text-slate-400">{c.email}</div>}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                c.role === 'admin'
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : c.role === 'contractor'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}
+                            >
+                              {c.role || 'customer'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-medium text-slate-800">{c.business_name || '—'}</div>
+                            {c.gstin && <div className="text-[10px] text-slate-500 font-mono">GST: {c.gstin}</div>}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[11px]">
+                              {c.orders_count || 0} orders
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 text-[11px]">
+                            {new Date(c.created_at).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                c.is_active !== false
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {c.is_active !== false ? 'Active' : 'Suspended'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => handleToggleCustomerStatus(c.id, c.is_active !== false)}
+                              disabled={actionLoading}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition ${
+                                c.is_active !== false
+                                  ? 'bg-red-50 text-red-700 hover:bg-red-100'
+                                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              }`}
+                            >
+                              {c.is_active !== false ? (
+                                <>
+                                  <Lock className="w-3 h-3" />
+                                  <span>Suspend</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Unlock className="w-3 h-3" />
+                                  <span>Reactivate</span>
+                                </>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
+          </div>
+        )}
+
+        {/* TAB: CATEGORY & BRAND MANAGEMENT */}
+        {activeTab === 'categories' && (
+          <div className="space-y-4">
+            {/* Sub-tab pills */}
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+              <button
+                type="button"
+                onClick={() => setCategorySubTab('categories')}
+                className={`px-4 py-2 text-xs font-bold rounded-xl transition ${
+                  categorySubTab === 'categories'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                Taxonomy Categories ({categories.length || SEED_CATEGORIES.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setCategorySubTab('brands')}
+                className={`px-4 py-2 text-xs font-bold rounded-xl transition ${
+                  categorySubTab === 'brands'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                Manufacturing Brands ({brandsList.length || SEED_BRANDS.length})
+              </button>
+            </div>
+
+            {categorySubTab === 'categories' ? (
+              <>
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center justify-between text-xs">
+                  <div>
+                    <h3 className="font-bold uppercase tracking-wider text-slate-800">
+                      Construction Categories & Tax Configurations
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Active storefront taxonomies and assigned default GST rates for billing.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setCategoryModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition shadow-sm"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Category</span>
+                  </button>
+                </div>
+
+                {/* Add Category Modal */}
+                {categoryModalOpen && (
+                  <div className="bg-white border-2 border-amber-500/40 rounded-2xl p-5 shadow-lg space-y-4 text-xs">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <h4 className="font-bold text-slate-900 text-sm">Add New Construction Category</h4>
+                      <button
+                        onClick={() => setCategoryModalOpen(false)}
+                        className="text-slate-400 hover:text-slate-600 font-bold"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <form onSubmit={handleCreateCategory} className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Category Name *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Waterproofing & Chemical Sealants"
+                            value={newCategory.name}
+                            onChange={(e) => {
+                              const name = e.target.value;
+                              const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                              setNewCategory({ ...newCategory, name, slug });
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">URL Slug *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="waterproofing-sealants"
+                            value={newCategory.slug}
+                            onChange={(e) => setNewCategory({ ...newCategory, slug: e.target.value })}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Description</label>
+                          <input
+                            type="text"
+                            placeholder="Liquid waterproofing, polymer coatings, epoxy resins"
+                            value={newCategory.description}
+                            onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Default GST Rate (%) *</label>
+                          <select
+                            value={newCategory.defaultGstRatePct}
+                            onChange={(e) => setNewCategory({ ...newCategory, defaultGstRatePct: Number(e.target.value) })}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                          >
+                            <option value={5}>5% (Essential Construction Inputs)</option>
+                            <option value={12}>12% (Plumbing & Ceramic Hardware)</option>
+                            <option value={18}>18% (Paints, Tiles & Standard Materials)</option>
+                            <option value={28}>28% (Cement, TMT Steel & Heavy Rebars)</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setCategoryModalOpen(false)}
+                          className="px-4 py-2 border border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={actionLoading}
+                          className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition shadow-sm"
+                        >
+                          Save Category
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden text-xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-4 font-semibold">Order</th>
+                          <th className="py-3 px-4 font-semibold">Category Name</th>
+                          <th className="py-3 px-4 font-semibold">URL Slug</th>
+                          <th className="py-3 px-4 font-semibold">Tax Bracket</th>
+                          <th className="py-3 px-4 font-semibold">Storefront Status</th>
+                          <th className="py-3 px-4 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(categories.length > 0 ? categories : SEED_CATEGORIES).map((cat, idx) => (
+                          <tr key={cat.id || cat.slug} className="hover:bg-slate-50/70">
+                            <td className="py-3 px-4 font-mono text-slate-400">{cat.display_order || idx + 1}</td>
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-900">{cat.name}</div>
+                              <div className="text-[11px] text-slate-500 max-w-sm truncate">{cat.description}</div>
+                            </td>
+                            <td className="py-3 px-4 font-mono text-[11px] text-slate-600">/{cat.slug}</td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 font-bold font-mono">
+                                {cat.default_gst_rate_pct || 18}% GST
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  cat.is_active !== false
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}
+                              >
+                                {cat.is_active !== false ? 'Active in Menu' : 'Archived'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => handleToggleCategory(cat.id, cat.is_active !== false)}
+                                disabled={actionLoading}
+                                className="text-[11px] font-semibold text-slate-700 hover:text-slate-900 underline"
+                              >
+                                {cat.is_active !== false ? 'Deactivate' : 'Publish'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div>
+                    <h3 className="font-bold uppercase tracking-wider text-slate-800">
+                      Authorized Manufacturing Brands & OEMs
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Approved Indian and regional construction material manufacturers in the Ayodhya supply chain.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1.5 bg-slate-50">
+                      <Search className="w-3.5 h-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search brands..."
+                        value={brandSearch}
+                        onChange={(e) => setBrandSearch(e.target.value)}
+                        className="bg-transparent border-none outline-none text-xs text-slate-900 placeholder-slate-400"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setBrandModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition shadow-sm whitespace-nowrap"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Brand</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Add Brand Modal */}
+                {brandModalOpen && (
+                  <div className="bg-white border-2 border-amber-500/40 rounded-2xl p-5 shadow-lg space-y-4 text-xs">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <h4 className="font-bold text-slate-900 text-sm">Register Construction Brand</h4>
+                      <button
+                        onClick={() => setBrandModalOpen(false)}
+                        className="text-slate-400 hover:text-slate-600 font-bold"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <form onSubmit={handleCreateBrand} className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Brand Name *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Ambuja Cements"
+                            value={newBrand.name}
+                            onChange={(e) => {
+                              const name = e.target.value;
+                              const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                              setNewBrand({ ...newBrand, name, slug });
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Brand Slug *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="ambuja-cements"
+                            value={newBrand.slug}
+                            onChange={(e) => setNewBrand({ ...newBrand, slug: e.target.value })}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Origin Country</label>
+                          <input
+                            type="text"
+                            value={newBrand.originCountry}
+                            onChange={(e) => setNewBrand({ ...newBrand, originCountry: e.target.value })}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Logo URL (Optional)</label>
+                          <input
+                            type="text"
+                            placeholder="/images/brands/ambuja.png"
+                            value={newBrand.logoUrl}
+                            onChange={(e) => setNewBrand({ ...newBrand, logoUrl: e.target.value })}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">Description</label>
+                        <textarea
+                          rows={2}
+                          placeholder="Leading manufacturer of cement and clinker in India."
+                          value={newBrand.description}
+                          onChange={(e) => setNewBrand({ ...newBrand, description: e.target.value })}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setBrandModalOpen(false)}
+                          className="px-4 py-2 border border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={actionLoading}
+                          className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition shadow-sm"
+                        >
+                          Register Brand
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden text-xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-4 font-semibold">Brand Name</th>
+                          <th className="py-3 px-4 font-semibold">Slug Identifier</th>
+                          <th className="py-3 px-4 font-semibold">Country</th>
+                          <th className="py-3 px-4 font-semibold">Description</th>
+                          <th className="py-3 px-4 font-semibold">Status</th>
+                          <th className="py-3 px-4 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(brandsList.length > 0 ? brandsList : SEED_BRANDS)
+                          .filter((b) =>
+                            !brandSearch
+                              ? true
+                              : b.name.toLowerCase().includes(brandSearch.toLowerCase()) ||
+                                (b.slug || '').toLowerCase().includes(brandSearch.toLowerCase())
+                          )
+                          .map((brand) => (
+                            <tr key={brand.id || brand.slug} className="hover:bg-slate-50/70">
+                              <td className="py-3 px-4">
+                                <div className="font-bold text-slate-900">{brand.name}</div>
+                                {brand.is_featured && (
+                                  <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                                    Featured OEM
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 font-mono text-[11px] text-slate-600">{brand.slug}</td>
+                              <td className="py-3 px-4 text-slate-600">{brand.origin_country || 'India'}</td>
+                              <td className="py-3 px-4 text-slate-500 max-w-sm truncate">{brand.description || '—'}</td>
+                              <td className="py-3 px-4">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    brand.is_active !== false
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-red-100 text-red-800'
+                                  }`}
+                                >
+                                  {brand.is_active !== false ? 'Active' : 'Suspended'}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <button
+                                  onClick={() => handleToggleBrand(brand.id, brand.is_active !== false)}
+                                  disabled={actionLoading}
+                                  className="text-[11px] font-semibold text-slate-700 hover:text-slate-900 underline"
+                                >
+                                  {brand.is_active !== false ? 'Deactivate' : 'Activate'}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* TAB 7: CATALOG & PRODUCT MANAGEMENT */}
+        {activeTab === 'products' && (
+          <div className="space-y-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto flex-1">
+                <div className="flex items-center gap-2 w-full sm:w-64 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50">
+                  <Search className="w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search title, brand, SKU..."
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    className="bg-transparent border-none outline-none w-full text-slate-900 placeholder-slate-400 text-xs"
+                  />
+                </div>
+                <select
+                  value={productCategoryFilter}
+                  onChange={(e) => setProductCategoryFilter(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-xl bg-white text-slate-700 text-xs"
+                >
+                  <option value="">All Categories</option>
+                  {(categories.length > 0 ? categories : SEED_CATEGORIES).map((c) => (
+                    <option key={c.slug} value={c.slug}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={() => setProductModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition shadow-sm whitespace-nowrap"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Product</span>
+              </button>
+            </div>
+
+            {/* Add Product Modal */}
+            {productModalOpen && (
+              <div className="bg-white border-2 border-amber-500/40 rounded-2xl p-5 shadow-lg space-y-4 text-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h4 className="font-bold text-slate-900 text-sm">Add New Product to Catalog</h4>
+                  <button
+                    onClick={() => setProductModalOpen(false)}
+                    className="text-slate-400 hover:text-slate-600 font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <form onSubmit={handleCreateProduct} className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Product Title *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. UltraTech Super Weather Pro Cement"
+                        value={newProduct.title}
+                        onChange={(e) => setNewProduct({ ...newProduct, title: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Brand Name *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. UltraTech Cement"
+                        value={newProduct.brandName}
+                        onChange={(e) => setNewProduct({ ...newProduct, brandName: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Category *</label>
+                      <select
+                        value={newProduct.categorySlug}
+                        onChange={(e) => {
+                          const slug = e.target.value;
+                          const found = (categories.length > 0 ? categories : SEED_CATEGORIES).find((c) => c.slug === slug);
+                          setNewProduct({
+                            ...newProduct,
+                            categorySlug: slug,
+                            categoryName: found?.name || 'Construction Materials',
+                          });
+                        }}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                      >
+                        {(categories.length > 0 ? categories : SEED_CATEGORIES).map((c) => (
+                          <option key={c.slug} value={c.slug}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Selling Price (₹) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        placeholder="385"
+                        value={newProduct.sellingPriceRupees}
+                        onChange={(e) => setNewProduct({ ...newProduct, sellingPriceRupees: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">MRP (₹)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="420"
+                        value={newProduct.mrpRupees}
+                        onChange={(e) => setNewProduct({ ...newProduct, mrpRupees: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Unit of Measurement *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Bag (50 Kg), Piece, Ton"
+                        value={newProduct.unit}
+                        onChange={(e) => setNewProduct({ ...newProduct, unit: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Min Order Quantity</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={newProduct.minOrderQuantity}
+                        onChange={(e) => setNewProduct({ ...newProduct, minOrderQuantity: Number(e.target.value) })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">GST Rate (%)</label>
+                      <select
+                        value={newProduct.gstRatePct}
+                        onChange={(e) => setNewProduct({ ...newProduct, gstRatePct: Number(e.target.value) })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                      >
+                        <option value={5}>5%</option>
+                        <option value={12}>12%</option>
+                        <option value={18}>18%</option>
+                        <option value={28}>28%</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setProductModalOpen(false)}
+                      className="px-4 py-2 border border-slate-200 rounded-xl font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={actionLoading}
+                      className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition shadow-sm"
+                    >
+                      Publish Product
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden text-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4 font-semibold">Product Title & Brand</th>
+                      <th className="py-3 px-4 font-semibold">Category</th>
+                      <th className="py-3 px-4 font-semibold">Selling Price & MRP</th>
+                      <th className="py-3 px-4 font-semibold">Unit & Min Qty</th>
+                      <th className="py-3 px-4 font-semibold">GST Rate</th>
+                      <th className="py-3 px-4 font-semibold">Deliverability</th>
+                      <th className="py-3 px-4 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(productsList.length > 0 ? productsList : SEED_PRODUCTS)
+                      .filter((prod) => {
+                        const matchQuery =
+                          !productSearch ||
+                          prod.product_title.toLowerCase().includes(productSearch.toLowerCase()) ||
+                          (prod.brand_name || '').toLowerCase().includes(productSearch.toLowerCase());
+                        const matchCat =
+                          !productCategoryFilter ||
+                          prod.category_slug === productCategoryFilter;
+                        return matchQuery && matchCat;
+                      })
+                      .map((prod) => {
+                        const unitName = (prod as any).unit_of_measure || (prod as any).unit || 'Unit';
+                        const minQty = (prod as any).min_order_qty || (prod as any).min_order_quantity || 1;
+                        const taxRate = (prod as any).tax_rate_pct || (prod as any).gst_rate_pct || 18;
+                        const isAvailable = (prod as any).is_in_stock !== undefined ? (prod as any).is_in_stock : (prod as any).is_deliverable !== false;
+
+                        return (
+                          <tr key={prod.product_id} className="hover:bg-slate-50/70">
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-900">{prod.product_title}</div>
+                              <div className="text-[11px] text-amber-700 font-semibold">{prod.brand_name || 'Generic'}</div>
+                            </td>
+                            <td className="py-3 px-4 text-slate-600">{prod.category_name}</td>
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-900 font-mono">
+                                ₹{(prod.selling_price_paise / 100).toFixed(2)}
+                              </div>
+                              {prod.mrp_paise && prod.mrp_paise > prod.selling_price_paise && (
+                                <div className="text-[10px] text-slate-400 line-through font-mono">
+                                  MRP ₹{(prod.mrp_paise / 100).toFixed(2)}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-slate-600">
+                              <div>{unitName}</div>
+                              <div className="text-[10px] text-slate-400">Min: {minQty}</div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px]">
+                                {taxRate}% GST
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  isAvailable
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}
+                              >
+                                {isAvailable ? 'Available' : 'Out of Stock'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => handleToggleProduct(prod.product_id, isAvailable)}
+                                disabled={actionLoading}
+                                className="text-[11px] font-semibold text-slate-700 hover:text-slate-900 underline"
+                              >
+                                {isAvailable ? 'Mark Unavailable' : 'Mark Available'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: WISHLIST DEMAND & STOCK INTELLIGENCE */}
+        {activeTab === 'wishlist' && (
+          <div className="space-y-6">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <Heart className="w-4 h-4 text-rose-500 fill-rose-500" />
+                  <span>Customer Wishlist Demand & Stock Intelligence</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Aggregated intent signals from verified Ayodhya accounts and active site engineers. Use to optimize supplier procurement and yard stock.
+                </p>
+              </div>
+              <button
+                onClick={fetchAdminData}
+                disabled={loading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Refresh Intel</span>
+              </button>
+            </div>
+
+            {/* Top KPI Metric Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
+                  <Heart className="w-6 h-6 fill-rose-100" />
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Total Saved Items</div>
+                  <div className="text-2xl font-black text-slate-900 mt-0.5">
+                    {wishlistReport?.totalWishlistEntries || 0}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Across all customer accounts</div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
+                  <Package className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Unique Materials</div>
+                  <div className="text-2xl font-black text-slate-900 mt-0.5">
+                    {wishlistReport?.uniqueProductsWishlisted || 0}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Active catalog materials saved</div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${
+                  (wishlistReport?.highDemandZeroStock?.length || 0) > 0
+                    ? 'bg-red-50 text-red-600 border-red-200 animate-pulse'
+                    : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                }`}>
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Stock Alerts</div>
+                  <div className={`text-2xl font-black mt-0.5 ${
+                    (wishlistReport?.highDemandZeroStock?.length || 0) > 0 ? 'text-red-600' : 'text-slate-900'
+                  }`}>
+                    {wishlistReport?.highDemandZeroStock?.length || 0}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Saved items currently unavailable</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Zero stock warning banner if applicable */}
+            {(wishlistReport?.highDemandZeroStock?.length || 0) > 0 && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-xs text-red-800">
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Immediate Stock Action Required:</span> The following materials have active customer purchase intent but are marked out of stock or deliverability is disabled:
+                  <ul className="list-disc list-inside mt-1 space-y-0.5">
+                    {wishlistReport.highDemandZeroStock.map((item: any) => (
+                      <li key={item.productId} className="font-medium">
+                        <span className="font-bold">{item.productTitle}</span> ({item.wishlistCount} customer{item.wishlistCount > 1 ? 's' : ''} waiting)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* Table: Most Saved Materials */}
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden text-xs">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <h4 className="font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                  <span>Top In-Demand Construction Materials</span>
+                  <span className="text-[11px] text-slate-400 font-normal">
+                    (Ranked by customer saves)
+                  </span>
+                </h4>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4 font-semibold">Rank</th>
+                      <th className="py-3 px-4 font-semibold">Material / Product</th>
+                      <th className="py-3 px-4 font-semibold">Category</th>
+                      <th className="py-3 px-4 font-semibold">Selling Price</th>
+                      <th className="py-3 px-4 font-semibold">Wishlist Demand</th>
+                      <th className="py-3 px-4 font-semibold">Status</th>
+                      <th className="py-3 px-4 font-semibold text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(!wishlistReport?.topProducts || wishlistReport.topProducts.length === 0) ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-400">
+                          <Heart className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                          No wishlist records recorded in database yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      wishlistReport.topProducts.map((p: any, idx: number) => (
+                        <tr key={p.productId} className="hover:bg-slate-50/70">
+                          <td className="py-3 px-4 font-bold font-mono text-slate-400">
+                            #{idx + 1}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-slate-900">{p.productTitle}</div>
+                            <div className="text-[11px] text-amber-700 font-semibold">{p.brandName || 'Verified Brand'}</div>
+                          </td>
+                          <td className="py-3 px-4 text-slate-600">{p.categoryName || 'General'}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                            ₹{(p.sellingPricePaise / 100).toFixed(2)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 font-bold font-mono border border-rose-200">
+                              <Heart className="w-3 h-3 fill-rose-500" />
+                              <span>{p.wishlistCount} saved</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                p.isInStock
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {p.isInStock ? 'In Stock' : 'Out of Stock'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <Link
+                              href={`/products/${p.productSlug || p.productId}`}
+                              target="_blank"
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 hover:text-slate-900 underline"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>View Product</span>
+                            </Link>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Category Demand Distribution */}
+            {wishlistReport?.categoryDistribution && wishlistReport.categoryDistribution.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 text-xs">
+                <h4 className="font-bold uppercase tracking-wider text-slate-800 mb-3">
+                  Category Demand Distribution
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {wishlistReport.categoryDistribution.map((cat: any) => (
+                    <div key={cat.categoryName} className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <div className="font-semibold text-slate-900">{cat.categoryName}</div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
+                        <span>{cat.entryCount} total saves</span>
+                        <span className="font-medium text-slate-700">{cat.uniqueProducts} products</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

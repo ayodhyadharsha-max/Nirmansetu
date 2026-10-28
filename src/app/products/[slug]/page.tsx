@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { cache } from 'react';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -13,9 +13,13 @@ interface ProductPageProps {
   params: { slug: string };
 }
 
+const getProductMemoized = cache(async (slug: string) => {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+  return isUuid ? getProductById(slug) : getProductBySlug(slug);
+});
+
 export async function generateMetadata({ params }: ProductPageProps) {
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.slug);
-  const product = isUuid ? await getProductById(params.slug) : await getProductBySlug(params.slug);
+  const product = await getProductMemoized(params.slug);
 
   if (!product) {
     return { title: 'Product Not Found' };
@@ -31,7 +35,7 @@ export async function generateMetadata({ params }: ProductPageProps) {
     },
     openGraph: {
       title: `${product.product_title} | ${BRAND_CONFIG.name}`,
-      description: `Buy genuine ${product.product_title} in Ayodhya with rapid 60-120 min delivery.`,
+      description: `Buy genuine ${product.product_title} in Ayodhya Dham with timely jobsite delivery.`,
       url: `${baseUrl}/products/${product.product_slug}`,
       images: product.images?.[0] ? [{ url: product.images[0] }] : [],
     },
@@ -44,8 +48,7 @@ export async function generateMetadata({ params }: ProductPageProps) {
 }
 
 export default async function ProductDetailPage({ params }: ProductPageProps) {
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.slug);
-  const product = isUuid ? await getProductById(params.slug) : await getProductBySlug(params.slug);
+  const product = await getProductMemoized(params.slug);
 
   if (!product) {
     notFound();

@@ -21,8 +21,8 @@ const FAQS = [
     a: 'Every order generates a secure 4-digit verification code. When the delivery driver arrives, your site supervisor or engineer inspects the materials—confirming bag counts, bag manufacturing dates, and zero transit tearing. Only when satisfied do you share the OTP with the driver. If any bag is torn, note it down with the driver for immediate free replacement.',
   },
   {
-    q: 'Can contractors claim GST Input Tax Credit (ITC)?',
-    a: 'Yes, 100%. All materials are invoiced through authorized distributors with statutory HSN codes (e.g. 2523 for cement, 7214 for steel rebars). Simply enter your valid 15-digit GSTIN at checkout or during registration to receive a tax invoice for filing in GSTR-2B.',
+    q: 'Can contractors receive GST tax invoices for business credit?',
+    a: 'Statutory GST invoices with applicable HSN codes (e.g. 2523 for cement, 7214 for steel rebars) are issued for all orders. Simply enter your valid 15-digit GSTIN during checkout or in your account profile to receive a tax invoice. Input Tax Credit (ITC) eligibility is subject to applicable GST rules, filing conditions, and your business registration status.',
   },
   {
     q: 'How quickly can I get 10+ tons of cement or full truckloads of steel delivered?',

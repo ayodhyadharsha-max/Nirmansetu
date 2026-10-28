@@ -35,7 +35,8 @@ if (fs.existsSync(envPath)) {
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseServiceKey =
+  process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function setupAdmin() {
   console.log('----------------------------------------------------');
@@ -64,7 +65,7 @@ async function setupAdmin() {
   console.log(`🔒 Target Administrator Candidate: ${targetEmail || targetUserId}`);
 
   if (!supabaseServiceKey) {
-    console.log('⚠️  SUPABASE_SERVICE_ROLE_KEY is not configured in .env.local.');
+    console.log('⚠️  SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY is not configured in .env.local.');
     console.log('   Running in offline simulation mode:');
     console.log(`   ✅ User [${targetEmail || targetUserId}] role provisioned as "admin" in memory store.`);
     console.log('   Audit event logged: ACTION = PROMOTE_USER_ROLE, ROLE = admin');

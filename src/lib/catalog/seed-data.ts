@@ -22,7 +22,7 @@ export const SEED_CATEGORIES: Category[] = [
     description: 'OPC, PPC cement, TMT steel rebars, kiln red bricks, and structural aggregates',
     image_url: '/images/categories/cement.jpg',
     display_order: 1,
-    default_gst_rate_pct: 28.0,
+    default_gst_rate_pct: 18.0,
     is_active: true,
     created_at: '2026-10-18T00:00:00Z',
     updated_at: '2026-10-18T00:00:00Z',
@@ -271,7 +271,7 @@ export const SEED_BRANDS: Brand[] = [
 export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
   // 1. Cement & Construction Materials
   {
-    product_id: 'p0000000-0000-0000-0000-000000000001',
+    product_id: 'd0000000-0000-0000-0000-000000000001',
     product_title: 'UltraTech Super PPC Cement',
     product_slug: 'ultratech-super-ppc-cement',
     short_description: 'Engineered Portland Pozzolana Cement for heavy structural concrete and slab casting.',
@@ -282,7 +282,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     is_featured: true,
     specifications: { standard: 'IS 1489 Part 1', grade: 'PPC', bag_weight_kg: 50, curing_days: 14 },
     images: ['https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=800&q=80'],
-    tax_rate_pct: 28.0,
+    tax_rate_pct: 18.0,
     product_status: 'published',
     category_id: 'c0000000-0000-0000-0000-000000000001',
     category_name: 'Cement & Construction Materials',
@@ -291,7 +291,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'UltraTech Cement',
     brand_slug: 'ultratech-cement',
     brand_logo: '/images/brands/ultratech.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000001',
+    variant_id: 'e0000000-0000-0000-0000-000000000001',
     variant_title: '50 kg Laminated Bag',
     sku: 'UT-PPC-50KG-BAG',
     pack_size: '50 kg Laminated PP Bag',
@@ -308,7 +308,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     updated_at: '2026-10-18T00:00:00Z',
   },
   {
-    product_id: 'p0000000-0000-0000-0000-000000000002',
+    product_id: 'd0000000-0000-0000-0000-000000000002',
     product_title: 'Tata Tiscon 550D TMT Steel Rebars (12mm)',
     product_slug: 'tata-tiscon-550d-tmt-rebars-12mm',
     short_description: 'Primary Fe 550D grade Super Ductile earthquake-resistant TMT rods.',
@@ -328,7 +328,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Tata Tiscon',
     brand_slug: 'tata-tiscon',
     brand_logo: '/images/brands/tata-tiscon.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000002',
+    variant_id: 'e0000000-0000-0000-0000-000000000002',
     variant_title: '12mm Diameter (12m Rod)',
     sku: 'TT-550D-12MM-12M',
     pack_size: '12mm x 12m Standard Rod',
@@ -347,7 +347,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
 
   // 2. Tiles & Flooring
   {
-    product_id: 'p0000000-0000-0000-0000-000000000003',
+    product_id: 'd0000000-0000-0000-0000-000000000003',
     product_title: 'Kajaria Eternity Glazed Vitrified Floor Tiles (600x600mm)',
     product_slug: 'kajaria-eternity-vitrified-floor-tiles',
     short_description: 'Premium double-charge glazed vitrified tiles with high stain resistance for living and bedroom floors.',
@@ -367,7 +367,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Kajaria Ceramics',
     brand_slug: 'kajaria-ceramics',
     brand_logo: '/images/brands/kajaria.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000004',
+    variant_id: 'e0000000-0000-0000-0000-000000000004',
     variant_title: 'Box of 4 Tiles (15.5 Sq Ft Coverage)',
     sku: 'KAJ-GVT-600X600-BOX',
     pack_size: 'Box of 4 Tiles (15.5 Sq Ft)',
@@ -386,7 +386,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
 
   // 3. Paints, Primers & Putty
   {
-    product_id: 'p0000000-0000-0000-0000-000000000004',
+    product_id: 'd0000000-0000-0000-0000-000000000004',
     product_title: 'Asian Paints Apex WeatherProof Exterior Emulsion',
     product_slug: 'asian-paints-apex-exterior-emulsion',
     short_description: 'Modified acrylic exterior wall paint with silicon additives providing 5-year weather defence.',
@@ -406,7 +406,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Asian Paints',
     brand_slug: 'asian-paints',
     brand_logo: '/images/brands/asian-paints.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000005',
+    variant_id: 'e0000000-0000-0000-0000-000000000005',
     variant_title: '20 Litre Sealed Drum',
     sku: 'AP-APEX-EXT-20L',
     pack_size: '20 Litre Drum',
@@ -425,7 +425,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
 
   // 4. Electrical Products
   {
-    product_id: 'p0000000-0000-0000-0000-000000000005',
+    product_id: 'd0000000-0000-0000-0000-000000000005',
     product_title: 'Havells LifeLine Plus 2.5 sq mm FR PVC Insulated Copper Wire',
     product_slug: 'havells-lifeline-plus-25-wire',
     short_description: '100% electrolytic oxygen-free high conductivity copper wire with heat-resistant flame retardant insulation.',
@@ -445,7 +445,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Havells',
     brand_slug: 'havells',
     brand_logo: '/images/brands/havells.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000006',
+    variant_id: 'e0000000-0000-0000-0000-000000000006',
     variant_title: '90 Meter Box Coil (Red)',
     sku: 'HAV-LLP-25-RED-90M',
     pack_size: '90 Meter Sealed Coil Box',
@@ -464,7 +464,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
 
   // 5. Plumbing Pipes & Fittings
   {
-    product_id: 'p0000000-0000-0000-0000-000000000006',
+    product_id: 'd0000000-0000-0000-0000-000000000006',
     product_title: 'Supreme Lifeline CPVC Hot & Cold Water Pipe (3/4" / 20mm)',
     product_slug: 'supreme-lifeline-cpvc-pipe',
     short_description: 'Lead-free hot and cold potable water plumbing pipe certified to NSF 14/61 and IS 15778.',
@@ -484,7 +484,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Supreme Industries',
     brand_slug: 'supreme-industries',
     brand_logo: '/images/brands/supreme.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000007',
+    variant_id: 'e0000000-0000-0000-0000-000000000007',
     variant_title: '3/4 inch (20mm) - 3 Meter Pipe',
     sku: 'SUP-CPVC-20MM-3M',
     pack_size: '20mm x 3 Meter Pipe',
@@ -503,7 +503,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
 
   // 6. Sanitaryware & Bathroom Fittings
   {
-    product_id: 'p0000000-0000-0000-0000-000000000007',
+    product_id: 'd0000000-0000-0000-0000-000000000007',
     product_title: 'Jaquar Florentine Single Lever Basin Mixer',
     product_slug: 'jaquar-florentine-basin-mixer',
     short_description: 'Solid brass chrome finish single lever basin faucet with ceramic disc cartridge.',
@@ -523,7 +523,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Jaquar',
     brand_slug: 'jaquar',
     brand_logo: '/images/brands/jaquar.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000008',
+    variant_id: 'e0000000-0000-0000-0000-000000000008',
     variant_title: 'Chrome Finish Standard Mixer',
     sku: 'JAQ-FLOR-BM-CHR',
     pack_size: 'Individual Boxed Fixture',
@@ -542,7 +542,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
 
   // 7. Plywood, MDF & Laminates
   {
-    product_id: 'p0000000-0000-0000-0000-000000000008',
+    product_id: 'd0000000-0000-0000-0000-000000000008',
     product_title: 'Greenply 710 Marine Grade BWP Plywood (8x4 Ft x 19mm)',
     product_slug: 'greenply-710-marine-bwp-plywood',
     short_description: 'Boiling Water Proof marine plywood bonded with unextended phenol formaldehyde resin.',
@@ -562,7 +562,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Greenply',
     brand_slug: 'greenply',
     brand_logo: '/images/brands/greenply.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000009',
+    variant_id: 'e0000000-0000-0000-0000-000000000009',
     variant_title: '19mm Thickness Sheet (8ft x 4ft)',
     sku: 'GP-BWP710-19MM-8X4',
     pack_size: '8ft x 4ft x 19mm Full Sheet',
@@ -581,7 +581,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
 
   // 8. Hardware, Tools & Fasteners
   {
-    product_id: 'p0000000-0000-0000-0000-000000000009',
+    product_id: 'd0000000-0000-0000-0000-000000000009',
     product_title: 'Godrej Ultra Tribolt Main Door Deadbolt Lock',
     product_slug: 'godrej-ultra-tribolt-door-lock',
     short_description: 'High-security 3-bolt antique brass finish main door rim lock with 14-pin Ultra key technology.',
@@ -601,7 +601,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Godrej Locks',
     brand_slug: 'godrej-locks',
     brand_logo: '/images/brands/godrej.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000010',
+    variant_id: 'e0000000-0000-0000-0000-000000000010',
     variant_title: 'Antique Brass Rim Lock Kit',
     sku: 'GOD-TRIBOLT-AB-SET',
     pack_size: 'Complete Lock Kit with 4 Keys',
@@ -618,7 +618,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     updated_at: '2026-10-18T00:00:00Z',
   },
   {
-    product_id: 'p0000000-0000-0000-0000-000000000011',
+    product_id: 'd0000000-0000-0000-0000-000000000011',
     product_title: 'Tata Wiron 18-Gauge Annealed GI Binding Wire',
     product_slug: 'tata-wiron-18-gauge-binding-wire',
     short_description: 'Soft annealed corrosion-resistant galvanized iron binding wire for structural reinforcement tying.',
@@ -638,7 +638,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Tata Tiscon',
     brand_slug: 'tata-tiscon',
     brand_logo: '/images/brands/tata-tiscon.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000012',
+    variant_id: 'e0000000-0000-0000-0000-000000000012',
     variant_title: '25 kg Bundle Coil',
     sku: 'TATA-WIRON-18G-25KG',
     pack_size: '25 kg Bundle Coil',
@@ -657,7 +657,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
 
   // 9. Kitchen & Home Improvement
   {
-    product_id: 'p0000000-0000-0000-0000-000000000010',
+    product_id: 'd0000000-0000-0000-0000-000000000010',
     product_title: 'Sintex 1000 Litre 3-Layer Overhead Water Storage Tank',
     product_slug: 'sintex-1000l-water-tank',
     short_description: '100% virgin food-grade polyethylene water tank with UV protection and antimicrobial inner layer.',
@@ -677,7 +677,7 @@ export const SEED_CATALOG_ITEMS: PublicCatalogItem[] = [
     brand_name: 'Sintex',
     brand_slug: 'sintex',
     brand_logo: '/images/brands/sintex.png',
-    variant_id: 'v0000000-0000-0000-0000-000000000011',
+    variant_id: 'e0000000-0000-0000-0000-000000000011',
     variant_title: '1000 Litre 3-Layer Tank',
     sku: 'SINT-1000L-3LAY',
     pack_size: '1000 Litre Unit with Threaded Lid',

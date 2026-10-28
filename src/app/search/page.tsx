@@ -2,6 +2,8 @@ import React from 'react';
 import Link from 'next/link';
 import { Search, ChevronRight, Filter, AlertCircle, ArrowLeft } from 'lucide-react';
 import { listProducts, getCategories, getBrands } from '@/lib/catalog/service';
+import { searchCatalogProducts } from '@/config/homerun-catalog';
+import { PublicCatalogItem } from '@/types/database';
 import { ProductCard } from '@/components/ProductCard';
 import { Header } from '@/components/Header';
 import { CartDrawer } from '@/components/CartDrawer';
@@ -45,6 +47,53 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     }),
   ]);
 
+  let displayItems = [...result.items];
+  let totalCount = result.totalCount;
+
+  if (displayItems.length === 0 && query) {
+    const catalogMatches = searchCatalogProducts(query);
+    if (catalogMatches.length > 0) {
+      displayItems = catalogMatches.map((item) => ({
+        product_id: item.id,
+        product_title: item.title,
+        product_slug: item.slug,
+        short_description: item.title,
+        description: item.title,
+        hsn_code: '2523',
+        unit_of_measure: 'units',
+        is_bulk_available: true,
+        is_featured: true,
+        specifications: {},
+        images: [item.imageUrl],
+        tax_rate_pct: 18,
+        product_status: 'published' as const,
+        category_id: 'c0000000-0000-0000-0000-000000000001',
+        category_name: 'Materials',
+        category_slug: 'cement-construction-materials',
+        brand_id: 'b0000000-0000-0000-0000-000000000001',
+        brand_name: item.brand,
+        brand_slug: item.brand.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        brand_logo: item.imageUrl,
+        variant_id: `v-${item.id}`,
+        variant_title: 'Standard',
+        sku: `SKU-${item.id}`,
+        pack_size: 'Standard',
+        attributes: {},
+        min_order_qty: 1,
+        max_order_qty: 500,
+        weight_kg: 10,
+        dimensions_cm: { length: 30, width: 20, height: 10 },
+        selling_price_paise: item.price * 100,
+        mrp_paise: item.mrp * 100,
+        total_available_stock: 500,
+        is_in_stock: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+      totalCount = displayItems.length;
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       {/* Modern Storefront Header */}
@@ -75,7 +124,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
           {query && (
             <div className="text-center mt-3 text-xs text-slate-500">
-              Showing search results for <span className="font-bold text-slate-900">&ldquo;{query}&rdquo;</span> ({result.totalCount} {result.totalCount === 1 ? 'item' : 'items'} found)
+              Showing search results for <span className="font-bold text-slate-900">&ldquo;{query}&rdquo;</span> ({totalCount} {totalCount === 1 ? 'item' : 'items'} found)
             </div>
           )}
         </div>
@@ -127,7 +176,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
           {/* Results Grid */}
           <section className="lg:col-span-3">
-            {result.items.length === 0 ? (
+            {displayItems.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
                 <AlertCircle className="w-10 h-10 text-slate-400 mx-auto" />
                 <h3 className="text-base font-bold text-slate-800">
@@ -147,7 +196,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {result.items.map((prod) => (
+                {displayItems.map((prod) => (
                   <ProductCard key={prod.product_id} product={prod} />
                 ))}
               </div>

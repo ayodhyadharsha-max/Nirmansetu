@@ -58,8 +58,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             email: sbUser.email,
             fullName: profile?.full_name || sbUser.email?.split('@')[0] || 'Ayodhya Builder',
             role: profile?.role || 'customer',
-            phone: profile?.phone_number || undefined,
-            companyName: profile?.company_name || undefined,
+            phone: profile?.phone || profile?.phone_number || sbUser.phone || undefined,
+            companyName: profile?.business_name || profile?.company_name || undefined,
             gstin: profile?.gstin || undefined,
           };
           setUser(session);
@@ -101,6 +101,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const supabase = createBrowserSupabaseClient();
       await supabase.auth.signOut();
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('nirmansetu_auth_token');
+      }
     } catch {
       // Ignore
     }

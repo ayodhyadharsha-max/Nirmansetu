@@ -1,31 +1,37 @@
 import { NextResponse } from 'next/server';
 import { listUserOrders } from '@/lib/orders/service';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getAuthenticatedServerSession } from '@/lib/auth/roles';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    let userId = searchParams.get('userId');
+    const requestedUserId = searchParams.get('userId');
 
-    // Verify session
-    try {
-      const supabase = createServerSupabaseClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        userId = user.id;
-      }
-    } catch {
-      // Handled
-    }
+    // Verify session strictly via server session (Bearer token or cookie)
+    const session = await getAuthenticatedServerSession(request);
 
-    if (!userId) {
+    if (!session) {
       return NextResponse.json(
-        { success: false, error: 'Authentication required to view order history' },
+        { success: false, error: 'Authentication required to view order history. Please log in.' },
         { status: 401 }
       );
     }
 
-    const orders = await listUserOrders(userId);
+    // Customer isolation check:
+    // Regular customers can ONLY view their own orders.
+    // Platform administrators can view orders for any customer by supplying userId.
+    let targetUserId = session.id;
+    if (requestedUserId && requestedUserId !== session.id) {
+      if (session.role !== 'admin') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied: You are not authorized to view orders belonging to another customer.' },
+          { status: 403 }
+        );
+      }
+      targetUserId = requestedUserId;
+    }
+
+    const orders = await listUserOrders(targetUserId);
 
     return NextResponse.json({
       success: true,

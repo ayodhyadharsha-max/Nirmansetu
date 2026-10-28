@@ -16,18 +16,88 @@ import {
   FileText,
   Building,
   Package,
+  Heart,
 } from 'lucide-react';
 import { PublicCatalogItem } from '@/types/database';
 import { formatPaiseToRupees } from '@/lib/money';
 import { ProductCard } from './ProductCard';
 import { AYODHYA_REGIONAL_HUBS } from '@/config/brand';
+import { ALL_HOMERUN_PRODUCTS } from '@/config/homerun-catalog';
 
 import { useCart } from '@/context/CartContext';
+import { useWishlist } from '@/context/WishlistContext';
 
 interface ProductDetailViewProps {
   product: PublicCatalogItem;
   relatedProducts: PublicCatalogItem[];
   onAddToCart?: (item: PublicCatalogItem, quantity: number) => void;
+}
+
+function formatUnitAndMinOrder(unitOfMeasure: string, minQty: number = 1) {
+  const normalized = (unitOfMeasure || '').toLowerCase().trim();
+
+  if (normalized.includes('50 kg bag') || normalized.includes('50kg bag') || normalized.includes('50 kg')) {
+    return {
+      priceUnit: 'per 50 kg bag',
+      quantityLabel: 'Quantity (Bags)',
+      minOrderText: minQty === 1 ? '1 bag (50 kg)' : `${minQty} bags (${minQty * 50} kg total)`,
+      itemPlural: minQty === 1 ? 'Bag (50 kg)' : 'Bags (50 kg each)',
+      shortUnit: minQty === 1 ? 'bag' : 'bags',
+    };
+  }
+  if (normalized.includes('40 kg bag') || normalized.includes('40kg bag') || normalized.includes('40 kg')) {
+    return {
+      priceUnit: 'per 40 kg bag',
+      quantityLabel: 'Quantity (Bags)',
+      minOrderText: minQty === 1 ? '1 bag (40 kg)' : `${minQty} bags (${minQty * 40} kg total)`,
+      itemPlural: minQty === 1 ? 'Bag (40 kg)' : 'Bags (40 kg each)',
+      shortUnit: minQty === 1 ? 'bag' : 'bags',
+    };
+  }
+  if (normalized.includes('coil') || normalized.includes('90m')) {
+    return {
+      priceUnit: 'per 90m coil',
+      quantityLabel: 'Quantity (Coils)',
+      minOrderText: minQty === 1 ? '1 coil (90m)' : `${minQty} coils`,
+      itemPlural: minQty === 1 ? 'Coil (90m)' : 'Coils (90m)',
+      shortUnit: minQty === 1 ? 'coil' : 'coils',
+    };
+  }
+  if (normalized.includes('piece') || normalized.includes('pc')) {
+    return {
+      priceUnit: 'per piece',
+      quantityLabel: 'Quantity (Pieces)',
+      minOrderText: minQty === 1 ? '1 piece' : `${minQty} pieces`,
+      itemPlural: minQty === 1 ? 'Piece' : 'Pieces',
+      shortUnit: minQty === 1 ? 'piece' : 'pieces',
+    };
+  }
+  if (normalized.includes('kg')) {
+    return {
+      priceUnit: 'per kg',
+      quantityLabel: 'Quantity (kg)',
+      minOrderText: `${minQty} kg`,
+      itemPlural: 'kg',
+      shortUnit: 'kg',
+    };
+  }
+  if (normalized.includes('litre') || normalized.includes('liter')) {
+    return {
+      priceUnit: 'per litre',
+      quantityLabel: 'Quantity (Litres)',
+      minOrderText: `${minQty} L`,
+      itemPlural: minQty === 1 ? 'Litre' : 'Litres',
+      shortUnit: minQty === 1 ? 'L' : 'L',
+    };
+  }
+
+  return {
+    priceUnit: `per ${unitOfMeasure}`,
+    quantityLabel: `Quantity (${unitOfMeasure})`,
+    minOrderText: minQty === 1 ? `1 ${unitOfMeasure}` : `${minQty} ${unitOfMeasure}`,
+    itemPlural: unitOfMeasure,
+    shortUnit: unitOfMeasure,
+  };
 }
 
 export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
@@ -36,32 +106,70 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
   onAddToCart,
 }) => {
   const cart = useCart();
+  const { isWishlisted, toggleWishlist } = useWishlist();
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(product.min_order_qty || 1);
   const [selectedPincode, setSelectedPincode] = useState(cart.selectedPincode || '224123');
   const [isAdded, setIsAdded] = useState(false);
 
-  const images = product.images && product.images.length > 0
-    ? product.images
-    : ['https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=800&q=80'];
+  const unitInfo = formatUnitAndMinOrder(product.unit_of_measure, product.min_order_qty);
+
+  const wishlisted = isWishlisted(product.product_id);
+
+  // Look up catalog item for authentic rich variants/options
+  const catalogItem = ALL_HOMERUN_PRODUCTS.find(
+    (p) => p.slug === product.product_slug || p.id === product.product_id || p.altSlugs?.includes(product.product_slug)
+  );
+  const options = catalogItem?.options || [];
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(
+    options[0]?.id || null
+  );
+
+  const selectedOption = options.find((o) => o.id === selectedOptionId);
+
+  const effectiveSellingPricePaise = selectedOption
+    ? selectedOption.price * 100
+    : product.selling_price_paise;
+  const effectiveMrpPaise = selectedOption
+    ? (selectedOption.mrp ?? selectedOption.price) * 100
+    : product.mrp_paise;
+  const effectivePackSize = selectedOption
+    ? selectedOption.packSize || selectedOption.name || selectedOption.title
+    : product.pack_size || `Standard ${product.unit_of_measure}`;
+
+  const optionImage = selectedOption?.imageUrl;
+  const rawImages = (optionImage ? [optionImage] : product.images) || [];
+  const images = rawImages.length > 0
+    ? rawImages
+    : ['/images/products/ultratech_cement.png'];
 
   const discountPct =
-    product.mrp_paise > product.selling_price_paise
-      ? Math.round(((product.mrp_paise - product.selling_price_paise) / product.mrp_paise) * 100)
+    effectiveMrpPaise > effectiveSellingPricePaise
+      ? Math.round(((effectiveMrpPaise - effectiveSellingPricePaise) / effectiveMrpPaise) * 100)
       : 0;
 
   // Single unit line total in paise
-  const lineTotalPaise = product.selling_price_paise * quantity;
+  const lineTotalPaise = effectiveSellingPricePaise * quantity;
 
   const handleQtyChange = (delta: number) => {
     setQuantity((prev) => Math.max(product.min_order_qty || 1, prev + delta));
   };
 
   const handleAdd = () => {
+    const effectiveProduct: PublicCatalogItem = {
+      ...product,
+      selling_price_paise: effectiveSellingPricePaise,
+      mrp_paise: effectiveMrpPaise,
+      pack_size: effectivePackSize,
+      variant_id: selectedOption ? `v-${selectedOption.id}` : product.variant_id,
+      variant_title: selectedOption ? (selectedOption.title || selectedOption.name || product.variant_title) : product.variant_title,
+      images: images,
+    };
+
     if (onAddToCart) {
-      onAddToCart(product, quantity);
+      onAddToCart(effectiveProduct, quantity);
     } else {
-      cart.addToCart(product, quantity);
+      cart.addToCart(effectiveProduct, quantity);
     }
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 2000);
@@ -89,17 +197,29 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
         {/* Left Column: Image Gallery */}
         <div className="lg:col-span-6 space-y-4">
           {/* Main Large Image */}
-          <div className="relative aspect-4/3 w-full bg-slate-100 rounded-3xl overflow-hidden border border-slate-200 shadow-sm">
+          <div className="relative aspect-4/3 w-full bg-white rounded-3xl overflow-hidden border border-slate-200/90 shadow-sm flex items-center justify-center p-6">
             <img
               src={images[selectedImageIndex] || images[0]}
               alt={product.product_title}
-              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/images/products/ultratech_cement.png';
+              }}
+              className="max-h-full max-w-full object-contain drop-shadow-xs"
             />
             {discountPct > 0 && (
-              <span className="absolute top-4 left-4 bg-emerald-600 text-white text-xs font-black px-2.5 py-1 rounded-lg shadow-sm">
+              <span className="absolute top-4 left-4 bg-[#f5b800] text-slate-950 text-xs font-black px-2.5 py-1 rounded-full shadow-2xs">
                 {discountPct}% OFF
               </span>
             )}
+            {/* Wishlist Heart Toggle */}
+            <button
+              type="button"
+              onClick={() => toggleWishlist(product)}
+              aria-label={wishlisted ? 'Remove from wishlist' : 'Save to wishlist'}
+              className="absolute top-4 right-4 z-10 p-2.5 rounded-full bg-white/95 hover:bg-white text-slate-400 hover:text-red-500 shadow-md transition cursor-pointer"
+            >
+              <Heart className={`w-5 h-5 ${wishlisted ? 'text-red-500 fill-red-500' : 'text-slate-400'}`} />
+            </button>
           </div>
 
           {/* Thumbnails */}
@@ -124,15 +244,15 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
               <div>
-                <div className="font-bold text-slate-900">100% Authentic Brand</div>
-                <div className="text-[11px] text-slate-500">Direct factory batches</div>
+                <div className="font-bold text-slate-900">Verified Brand Sourcing</div>
+                <div className="text-[11px] text-slate-500">Inspected before OTP release</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-amber-600 shrink-0" />
               <div>
-                <div className="font-bold text-slate-900">GST Invoice</div>
-                <div className="text-[11px] text-slate-500">Claim 18%/28% ITC</div>
+                <div className="font-bold text-slate-900">Statutory GST Invoice</div>
+                <div className="text-[11px] text-slate-500">Tax invoice with GSTIN (ITC rules apply)</div>
               </div>
             </div>
           </div>
@@ -159,14 +279,14 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-baseline justify-between">
             <div>
               <div className="text-2xl sm:text-3xl font-black text-slate-950">
-                {formatPaiseToRupees(product.selling_price_paise)}
+                {formatPaiseToRupees(effectiveSellingPricePaise)}
                 <span className="text-xs font-normal text-slate-500 ml-1.5">
-                  / {product.unit_of_measure}
+                  / {unitInfo.priceUnit}
                 </span>
               </div>
-              {product.mrp_paise > product.selling_price_paise && (
+              {effectiveMrpPaise > effectiveSellingPricePaise && (
                 <div className="text-xs text-slate-400 line-through mt-0.5">
-                  MRP {formatPaiseToRupees(product.mrp_paise)} (Inclusive of all taxes)
+                  MRP {formatPaiseToRupees(effectiveMrpPaise)} (Inclusive of all taxes)
                 </div>
               )}
             </div>
@@ -178,6 +298,59 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
             </div>
           </div>
 
+          {/* Multi-Option / Size Selector */}
+          {options.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <label className="font-bold text-slate-800 uppercase tracking-wider">
+                  Available Sizes / Options:
+                </label>
+                <span className="text-[11px] font-semibold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-full">
+                  {options.length} Variations
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {options.map((opt) => {
+                  const isSelected = (selectedOptionId || options[0].id) === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedOptionId(opt.id);
+                        setSelectedImageIndex(0);
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${
+                        isSelected
+                          ? 'border-amber-500 bg-amber-50/70 shadow-xs ring-2 ring-amber-400/50'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="text-xs font-bold text-slate-900 leading-tight">
+                        {opt.title || opt.name}
+                      </div>
+                      <div className="flex items-baseline gap-1.5 mt-1.5">
+                        <span className="text-sm font-black text-slate-950">
+                          ₹{opt.price.toLocaleString('en-IN')}
+                        </span>
+                        {typeof opt.mrp === 'number' && opt.mrp > opt.price && (
+                          <span className="text-[10px] text-slate-400 line-through">
+                            ₹{opt.mrp.toLocaleString('en-IN')}
+                          </span>
+                        )}
+                        {Boolean(opt.discountPct) && (
+                          <span className="text-[10px] font-bold text-emerald-700 ml-auto">
+                            {opt.discountPct}% OFF
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Pack Size & Unit Information */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
@@ -187,7 +360,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
               <div className="flex items-center gap-2">
                 <Package className="w-4 h-4 text-amber-600" />
                 <span className="font-bold text-slate-900">
-                  {product.pack_size || `Standard ${product.unit_of_measure}`}
+                  {effectivePackSize}
                 </span>
               </div>
               <span className="text-slate-500">Unit: {product.unit_of_measure}</span>
@@ -201,7 +374,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 <MapPin className="w-4 h-4 text-amber-500" />
                 <span>Deliver to Site ({selectedPincode})</span>
               </span>
-              <span className="font-bold text-emerald-700">{hub.slaMinutes} Mins SLA</span>
+              <span className="font-bold text-emerald-700">{hub.isExpress ? 'Express Dispatch Zone' : 'Standard Delivery Zone'}</span>
             </div>
             <p className="text-[11px] text-slate-500">
               Fulfilled through approved local stockists in {hub.name}. Dispatched via tempo directly to your site foundation or unloading area.
@@ -212,10 +385,10 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
           <div className="space-y-3 pt-2">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-slate-700">
-                Quantity ({product.unit_of_measure}):
+                {unitInfo.quantityLabel}:
               </span>
               <span className="text-slate-500">
-                Minimum order: <strong className="text-slate-900">{product.min_order_qty} {product.unit_of_measure}</strong>
+                Minimum order: <strong className="text-slate-900">{unitInfo.minOrderText}</strong>
               </span>
             </div>
 
@@ -246,8 +419,8 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                   !product.is_in_stock
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : isAdded
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-950 hover:bg-slate-800 text-amber-400'
+                    ? 'bg-emerald-800 text-white'
+                    : 'bg-[#257f2e] hover:bg-[#1f6d27] text-white active:scale-95'
                 }`}
               >
                 {isAdded ? (
@@ -258,8 +431,24 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
                 ) : !product.is_in_stock ? (
                   <span>Out of Stock</span>
                 ) : (
-                  <span>Add {quantity} {product.unit_of_measure} • {formatPaiseToRupees(lineTotalPaise)}</span>
+                  <span>
+                    Add {quantity} {quantity === 1 ? unitInfo.shortUnit : unitInfo.shortUnit} • {formatPaiseToRupees(lineTotalPaise)}
+                  </span>
                 )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => toggleWishlist(product)}
+                aria-label={wishlisted ? 'Remove from Wishlist' : 'Add to Wishlist'}
+                className={`px-4 py-3.5 rounded-2xl border font-bold text-xs flex items-center justify-center gap-1.5 transition ${
+                  wishlisted
+                    ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-900'
+                }`}
+              >
+                <Heart className={`w-4 h-4 ${wishlisted ? 'fill-red-500 text-red-500' : 'text-slate-400'}`} />
+                <span className="hidden sm:inline">{wishlisted ? 'Saved' : 'Save'}</span>
               </button>
             </div>
           </div>
@@ -289,7 +478,7 @@ export const ProductDetailView: React.FC<ProductDetailViewProps> = ({
               </tr>
               <tr className="bg-slate-50">
                 <td className="py-2.5 px-4 font-bold text-slate-600">Pack Size</td>
-                <td className="py-2.5 px-4 font-semibold text-slate-900">{product.pack_size || 'Standard Commercial'}</td>
+                <td className="py-2.5 px-4 font-semibold text-slate-900">{effectivePackSize}</td>
               </tr>
               <tr>
                 <td className="py-2.5 px-4 font-bold text-slate-600">HSN Code</td>

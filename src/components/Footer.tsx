@@ -1,192 +1,216 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { Building2, Phone, Mail, MapPin, Clock, ShieldCheck, ArrowRight, Sparkles } from 'lucide-react';
-import { BRAND_CONFIG, AYODHYA_REGIONAL_HUBS } from '@/config/brand';
-import { SEED_CATEGORIES } from '@/lib/catalog/seed-data';
+import { ChevronRight, ArrowRight, Check } from 'lucide-react';
+import { BRAND_CONFIG } from '@/config/brand';
 
 export const Footer: React.FC = () => {
+  const [email, setEmail] = useState('');
+  const [subscribed, setSubscribed] = useState(false);
+
+  const handleSubscribe = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (email.trim()) {
+      setSubscribed(true);
+      setTimeout(() => setSubscribed(false), 3000);
+      setEmail('');
+    }
+  };
+
   return (
-    <footer className="bg-slate-950 text-slate-300 pt-14 pb-10 border-t border-slate-800">
+    <footer className="bg-[#f5b800] text-slate-950 pt-16 pb-12 border-t border-amber-400">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 pb-12 border-b border-slate-800">
+        {/* Top 4 Columns Grid matching home-run.co screenshot */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-10 pb-16">
           
-          {/* Brand & Ayodhya Sourcing Mission (2 cols on lg) */}
-          <div className="lg:col-span-2 space-y-4">
-            <Link href="/" className="flex items-center gap-2 group inline-block">
-              <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black group-hover:scale-105 transition-transform">
-                <Building2 className="w-5 h-5" />
+          {/* Column 1: App Store Badges */}
+          <div className="space-y-3.5">
+            {/* Google Play Store Badge */}
+            <a
+              href="#app-download"
+              className="inline-flex items-center gap-2.5 bg-black text-white px-4 py-2.5 rounded-xl hover:bg-slate-900 transition-transform hover:scale-105 shadow-md w-48"
+            >
+              <svg className="w-6 h-6 fill-current shrink-0" viewBox="0 0 24 24">
+                <path d="M3.609 1.814L13.792 12 3.61 22.186a1.99 1.99 0 0 1-.61-.912V2.726c0-.336.082-.66.61-.912zm11.233 11.235l2.42 2.42-11.83 6.83 9.41-9.25zm0-2.098L5.432 1.701l11.83 6.83-2.42 2.42zm1.464 1.464l3.197-1.846c1.107-.639 1.107-1.683 0-2.322l-3.197-1.846-1.87 1.87 1.87 1.87z"/>
+              </svg>
+              <div className="text-left leading-none">
+                <div className="text-[9px] uppercase tracking-wider font-medium text-slate-300">GET IT ON</div>
+                <div className="text-sm font-black text-white mt-0.5">Google Play</div>
               </div>
-              <span className="text-xl font-black text-white">{BRAND_CONFIG.name}</span>
-            </Link>
-            <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
-              {BRAND_CONFIG.tagline}. Rapid 60-120 minute direct site fulfillment through approved partner stockists in {BRAND_CONFIG.city}, {BRAND_CONFIG.state}.
-            </p>
-            <div className="text-[11px] text-slate-500">
-              Legal Entity: {BRAND_CONFIG.legalEntity}
+            </a>
+
+            {/* Apple App Store Badge */}
+            <a
+              href="#app-download"
+              className="inline-flex items-center gap-2.5 bg-black text-white px-4 py-2.5 rounded-xl hover:bg-slate-900 transition-transform hover:scale-105 shadow-md w-48 block"
+            >
+              <svg className="w-6 h-6 fill-current shrink-0" viewBox="0 0 24 24">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-1.99.6-2.61 1.35-.55.63-1.03 1.7-0.9 2.73 1.01.08 2.04-.51 2.59-1.23z"/>
+              </svg>
+              <div className="text-left leading-none">
+                <div className="text-[9px] uppercase tracking-wider font-medium text-slate-300">Download on the</div>
+                <div className="text-sm font-black text-white mt-0.5">App Store</div>
+              </div>
+            </a>
+          </div>
+
+          {/* Column 2: Company */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-black text-slate-950 uppercase tracking-wider mb-3">
+              Company
+            </h4>
+            <ul className="space-y-2 text-xs font-bold text-slate-900">
+              <li>
+                <Link href="/about" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>About Us</span>
+                </Link>
+              </li>
+              <li>
+                <Link href="/contact" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>Contact</span>
+                </Link>
+              </li>
+              <li>
+                <Link href="/search" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>Price Lists</span>
+                </Link>
+              </li>
+              <li>
+                <Link href="/about" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>Knowledge Hub</span>
+                </Link>
+              </li>
+              <li>
+                <Link href="/search" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>Shop by Category</span>
+                </Link>
+              </li>
+              <li>
+                <Link href="#faqs" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>FAQ&apos;s</span>
+                </Link>
+              </li>
+              <li className="pt-2 border-t border-amber-400/60">
+                <Link href="/supplier" className="hover:underline flex items-center gap-1.5 text-slate-900 font-bold">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>Supplier Fulfilment Hub</span>
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Column 3: Policy */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-black text-slate-950 uppercase tracking-wider mb-3">
+              Policy
+            </h4>
+            <ul className="space-y-2 text-xs font-bold text-slate-900">
+              <li>
+                <Link href="/returns" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>Refund Policy</span>
+                </Link>
+              </li>
+              <li>
+                <Link href="/privacy" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>Privacy Policy</span>
+                </Link>
+              </li>
+              <li>
+                <Link href="/terms" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>Terms of Service</span>
+                </Link>
+              </li>
+              <li>
+                <Link href="/shipping" className="hover:underline flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-900" />
+                  <span>Shipping Policy</span>
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Column 4: Contact Information */}
+          <div className="space-y-3 text-xs text-slate-950">
+            <h4 className="text-sm font-black uppercase tracking-wider mb-3">
+              Contact Information
+            </h4>
+            
+            <div>
+              <span className="font-black">Email: </span>
+              <a href="mailto:hello@nirmansetu.in" className="font-bold underline hover:text-slate-800">
+                hello@nirmansetu.in
+              </a>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 max-w-sm space-y-1">
-              <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Zero Risk Site Delivery Guarantee</span>
-              </div>
-              <p className="text-[11px] text-slate-400 leading-snug">
-                Physically inspect cement bags, TMT rebars, and tiles at your job site before sharing your 4-digit Drop-off OTP.
+            <div>
+              <div className="font-black mb-1">Address:</div>
+              <p className="font-bold leading-relaxed text-slate-900">
+                {BRAND_CONFIG.name}, Tedhi Bazar Road, Near Ram Path, Ward No. 12, Ayodhya Dham, Uttar Pradesh 224123
               </p>
             </div>
           </div>
 
-          {/* Column 2: 9 Categories */}
-          <div>
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3">
-              Materials Catalog
-            </h4>
-            <ul className="space-y-1.5 text-xs text-slate-400">
-              {SEED_CATEGORIES.slice(0, 7).map((cat) => (
-                <li key={cat.id}>
-                  <Link
-                    href={`/categories/${cat.slug}`}
-                    className="hover:text-amber-400 transition block truncate"
-                  >
-                    {cat.name}
-                  </Link>
-                </li>
-              ))}
-              <li>
-                <Link
-                  href="/search"
-                  className="text-amber-400 hover:text-amber-300 font-bold block pt-1 text-xs"
-                >
-                  View All 9 Categories →
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Column 3: Tools & Policies */}
-          <div>
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3">
-              Contractor & Policies
-            </h4>
-            <ul className="space-y-1.5 text-xs text-slate-400">
-              <li>
-                <Link href="/bulk-enquiry" className="hover:text-amber-400 transition font-bold text-amber-300">
-                  Wholesale Bulk RFQ (10+ Tons)
-                </Link>
-              </li>
-              <li>
-                <Link href="/supplier-application" className="hover:text-amber-400 transition font-medium text-amber-200">
-                  Partner Merchant Application
-                </Link>
-              </li>
-              <li>
-                <Link href="/supplier" className="hover:text-amber-400 transition">
-                  Stockist & Supplier Portal
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin" className="hover:text-amber-400 transition text-slate-400">
-                  Operations & Admin Console
-                </Link>
-              </li>
-              <li>
-                <Link href="/cart" className="hover:text-amber-400 transition">
-                  Materials Schedule & Cart
-                </Link>
-              </li>
-              <li>
-                <Link href="/account" className="hover:text-amber-400 transition">
-                  Site Account & Order History
-                </Link>
-              </li>
-              <li>
-                <Link href="/about" className="hover:text-amber-400 transition">
-                  About NirmanSetu Ayodhya
-                </Link>
-              </li>
-              <li>
-                <Link href="/shipping" className="hover:text-amber-400 transition">
-                  Site Delivery & Unloading Rules
-                </Link>
-              </li>
-              <li>
-                <Link href="/returns" className="hover:text-amber-400 transition">
-                  Material Inspection & Returns
-                </Link>
-              </li>
-              <li>
-                <Link href="/privacy" className="hover:text-amber-400 transition">
-                  Privacy Policy
-                </Link>
-              </li>
-              <li>
-                <Link href="/terms" className="hover:text-amber-400 transition">
-                  Terms of Service
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Column 4: Contact & Operating Hours */}
-          <div>
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3">
-              Ayodhya Site Support
-            </h4>
-            <div className="space-y-2.5 text-xs text-slate-400">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>{BRAND_CONFIG.operatingHours}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-amber-400 shrink-0" />
-                <a href={`tel:${BRAND_CONFIG.supportPhone.replace(/\s+/g, '')}`} className="hover:text-white font-bold">
-                  {BRAND_CONFIG.supportPhone}
-                </a>
-              </div>
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-amber-400 shrink-0" />
-                <a href={`mailto:${BRAND_CONFIG.supportEmail}`} className="hover:text-white truncate">
-                  {BRAND_CONFIG.supportEmail}
-                </a>
-              </div>
-              <div className="flex items-start gap-2 pt-1">
-                <MapPin className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span className="text-[11px] leading-snug">
-                  Near Tedhi Bazar / Naya Ghat Road, Ayodhya Dham, UP 224123
-                </span>
-              </div>
-            </div>
-          </div>
-
         </div>
 
-        {/* Regional Hubs Row */}
-        <div className="py-6 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
-          <span className="font-bold text-white uppercase tracking-wider text-[11px]">
-            Ayodhya District Hubs:
-          </span>
-          <div className="flex flex-wrap items-center gap-4 text-[11px]">
-            {AYODHYA_REGIONAL_HUBS.map((hub) => (
-              <span key={hub.pincode} className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                <span className="text-slate-300 font-semibold">{hub.pincode}</span>
-                <span>({hub.name.replace(' Hub', '')}) - {hub.slaMinutes}m</span>
-              </span>
-            ))}
-          </div>
+        {/* Center Section: Email Newsletter Subscription matching home-run.co screenshot */}
+        <div className="py-12 border-t border-amber-400 text-center space-y-5">
+          <h3 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-950 tracking-tight">
+            Get a first peek at New Products, Special Offers, and so much more.
+          </h3>
+
+          <form onSubmit={handleSubscribe} className="max-w-xl mx-auto relative">
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              className="w-full px-6 py-3.5 rounded-full border border-slate-950/40 bg-white/10 hover:bg-white/20 focus:bg-white text-slate-950 placeholder:text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-slate-950 transition-all font-medium pr-14"
+            />
+            <button
+              type="submit"
+              aria-label="Subscribe"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center text-slate-950 hover:bg-black/10 transition"
+            >
+              {subscribed ? (
+                <Check className="w-5 h-5 text-emerald-800" />
+              ) : (
+                <ArrowRight className="w-5 h-5 text-slate-950" />
+              )}
+            </button>
+          </form>
+          {subscribed && (
+            <p className="text-xs font-black text-emerald-900">
+              Thank you for subscribing to NirmanSetu updates!
+            </p>
+          )}
         </div>
 
-        {/* Regulatory & Platform Compliance Notice */}
-        <div className="mt-8 text-center space-y-2 text-[11px] text-slate-500">
-          <p>
-            © {new Date().getFullYear()} {BRAND_CONFIG.name}. All rights reserved. Sourced exclusively through authorized local distributors in Ayodhya, Uttar Pradesh.
-          </p>
-          <p className="max-w-3xl mx-auto text-[10px] text-slate-600">
-            DISCLOSURE: Product brand trademarks (UltraTech, Tata Tiscon, Kajaria, Asian Paints, Dr. Fixit, Havells, Supreme, Jaquar, Greenply, Godrej, Sintex) belong to their respective corporate owners. Platform orders are fulfilled through independent, approved building material merchants.
+        {/* Bottom Copyright & Legal Links Bar matching screenshot */}
+        <div className="pt-8 border-t border-amber-400 text-center text-xs font-semibold text-slate-950 space-y-2">
+          <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+            <span>© 2026, {BRAND_CONFIG.name}</span>
+            <span>•</span>
+            <Link href="/returns" className="hover:underline">Refund policy</Link>
+            <span>•</span>
+            <Link href="/privacy" className="hover:underline">Privacy policy</Link>
+            <span>•</span>
+            <Link href="/terms" className="hover:underline">Terms of service</Link>
+            <span>•</span>
+            <Link href="/shipping" className="hover:underline">Shipping policy</Link>
+            <span>•</span>
+            <Link href="/contact" className="hover:underline">Contact information</Link>
           </p>
         </div>
 

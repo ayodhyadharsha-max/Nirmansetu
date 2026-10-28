@@ -30,6 +30,7 @@ import { useAuth } from '@/context/AuthContext';
 import { formatPaiseToRupees, calculateOrderTotals } from '@/lib/money';
 import { AYODHYA_REGIONAL_HUBS, BRAND_CONFIG } from '@/config/brand';
 import { CustomerAddress } from '@/types/database';
+import { getBrowserAuthHeaders } from '@/lib/auth/client-auth';
 
 export default function CartPage() {
   const {
@@ -178,6 +179,10 @@ export default function CartPage() {
       const payload = {
         idempotencyKey,
         cartId: sessionToken || 'guest-cart',
+        items: cartLines.map((l) => ({
+          variantId: l.item.variant_id,
+          quantity: l.quantity,
+        })),
         customerDetails: {
           name: recipientName.trim(),
           phone: recipientPhone.trim(),
@@ -203,10 +208,17 @@ export default function CartPage() {
         customerNotes: gstin.trim() ? `Tax Invoice GSTIN: ${gstin.trim()}` : undefined,
       };
 
+      const authHeaders = await getBrowserAuthHeaders();
       const res = await fetch('/api/orders/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          ...payload,
+          userId: user?.id,
+        }),
       });
 
       const data = await res.json();
@@ -810,27 +822,23 @@ export default function CartPage() {
                     </label>
 
                     <label
-                      className={`flex items-start p-3 rounded-lg border cursor-pointer transition ${
-                        paymentMethod === 'razorpay'
-                          ? 'border-orange-600 bg-orange-50/40 ring-1 ring-orange-600'
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
+                      className="flex items-start p-3 rounded-lg border border-slate-200 bg-slate-50/70 cursor-not-allowed opacity-75"
                     >
                       <input
                         type="radio"
                         name="paymentMethod"
                         value="razorpay"
-                        checked={paymentMethod === 'razorpay'}
-                        onChange={() => setPaymentMethod('razorpay')}
-                        className="mt-0.5 text-orange-600 focus:ring-orange-500"
+                        disabled
+                        className="mt-0.5 text-slate-400"
                       />
                       <div className="ml-3">
-                        <div className="flex items-center space-x-1.5 font-bold text-sm text-slate-900">
-                          <CreditCard className="w-4 h-4 text-blue-600" />
-                          <span>Razorpay / UPI / NetBanking / Cards</span>
+                        <div className="flex items-center space-x-2 font-bold text-sm text-slate-700">
+                          <CreditCard className="w-4 h-4 text-slate-400" />
+                          <span>Online Payment (Razorpay / UPI / NetBanking)</span>
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Setup in Progress</span>
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          Instant cryptographic authorization. Fast refund protection & tax invoice receipt.
+                          Merchant gateway verification underway. Please select Pay on Site (COD) for immediate delivery.
                         </p>
                       </div>
                     </label>

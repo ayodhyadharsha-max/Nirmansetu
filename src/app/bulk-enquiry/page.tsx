@@ -448,7 +448,7 @@ export default function BulkEnquiryPage() {
 
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">
-                        GSTIN (For 100% Tax Invoicing & ITC)
+                        GSTIN (For Business Tax Invoicing)
                       </label>
                       <input
                         type="text"
@@ -477,7 +477,7 @@ export default function BulkEnquiryPage() {
                 </button>
 
                 <p className="text-[11px] text-slate-500 text-center">
-                  Direct partnership sourcing from authorized stockists. Original mill test certificates provided for all cement and steel deliveries.
+                  Sourced through verified regional stockists. Quality-inspected materials delivered directly to your jobsite.
                 </p>
 
               </form>

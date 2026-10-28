@@ -453,7 +453,7 @@ export async function convertQuotationToOrder(
     id: `oi-${idx}`,
     order_id: orderId,
     variant_id: `v-qt-${idx}`,
-    supplier_id: (quotation as any).supplier_bids_summary?.[0]?.supplier_id || 's0000000-0000-0000-0000-000000000001',
+    supplier_id: (quotation as any).supplier_bids_summary?.[0]?.supplier_id || 'f0000000-0000-0000-0000-000000000001',
     product_title_snapshot: qi.item_title,
     variant_title_snapshot: `${qi.quantity} ${qi.unit}`,
     sku_snapshot: `SKU-QT-${idx}`,

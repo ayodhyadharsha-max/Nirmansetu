@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import {
   X,
@@ -23,10 +23,14 @@ import {
   FolderTree,
   Hammer,
   Home,
+  ChevronDown,
+  ChevronRight,
+  Sparkles,
 } from 'lucide-react';
 import { BRAND_CONFIG, AYODHYA_REGIONAL_HUBS } from '@/config/brand';
 import { SEED_CATEGORIES } from '@/lib/catalog/seed-data';
 import { useAuth } from '@/context/AuthContext';
+import { CATEGORY_GROUPS } from './CategoryNav';
 
 interface MobileNavDrawerProps {
   isOpen: boolean;
@@ -58,6 +62,8 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
   onOpenEnquiry,
 }) => {
   const { user } = useAuth();
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+
   const currentHub =
     AYODHYA_REGIONAL_HUBS.find((h) => h.pincode === selectedPincode) || AYODHYA_REGIONAL_HUBS[0];
 
@@ -65,7 +71,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-start bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-xs h-full shadow-2xl flex flex-col border-r border-slate-200">
+      <div className="bg-white w-full max-w-xs sm:max-w-sm h-full shadow-2xl flex flex-col border-r border-slate-200">
         
         {/* Drawer Header */}
         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
@@ -84,7 +90,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
           </Link>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-600 font-bold transition"
+            className="w-9 h-9 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-700 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
             aria-label="Close navigation"
           >
             <X className="w-4 h-4" />
@@ -114,7 +120,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
         </div>
 
         {/* Drawer Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 space-y-5">
           
           {/* Quick Account Status */}
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
@@ -129,7 +135,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
                 <Link
                   href="/account"
                   onClick={onClose}
-                  className="px-2.5 py-1 bg-slate-900 text-amber-400 text-xs font-bold rounded-lg"
+                  className="px-3 py-1.5 bg-slate-900 text-amber-400 text-xs font-bold rounded-lg"
                 >
                   Account
                 </Link>
@@ -143,7 +149,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
                 <Link
                   href="/login"
                   onClick={onClose}
-                  className="px-2.5 py-1 bg-amber-400 text-slate-950 text-xs font-extrabold rounded-lg"
+                  className="px-3 py-1.5 bg-amber-400 text-slate-950 text-xs font-extrabold rounded-lg shadow-2xs"
                 >
                   Sign In
                 </Link>
@@ -151,14 +157,14 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
             )}
           </div>
 
-          {/* Quick Tools Buttons */}
+          {/* Quick Tools: Site Estimator & Bulk RFQ */}
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => {
                 onClose();
                 onOpenCalculator();
               }}
-              className="p-2.5 rounded-xl border border-slate-200 hover:border-amber-400 bg-white hover:bg-amber-50/50 flex flex-col items-center justify-center text-center transition"
+              className="p-3 rounded-xl border border-slate-200 hover:border-amber-400 bg-white hover:bg-amber-50/50 flex flex-col items-center justify-center text-center transition cursor-pointer"
             >
               <Calculator className="w-5 h-5 text-amber-600 mb-1" />
               <span className="text-xs font-bold text-slate-900">Site Estimator</span>
@@ -170,7 +176,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
                 onClose();
                 onOpenEnquiry();
               }}
-              className="p-2.5 rounded-xl border border-slate-200 hover:border-amber-400 bg-white hover:bg-amber-50/50 flex flex-col items-center justify-center text-center transition"
+              className="p-3 rounded-xl border border-slate-200 hover:border-amber-400 bg-white hover:bg-amber-50/50 flex flex-col items-center justify-center text-center transition cursor-pointer"
             >
               <FileSpreadsheet className="w-5 h-5 text-amber-600 mb-1" />
               <span className="text-xs font-bold text-slate-900">Bulk RFQ</span>
@@ -178,31 +184,89 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
             </button>
           </div>
 
-          {/* Categories Navigation */}
+          {/* Touch-Friendly Category Accordion (Responsive Mobile Navigation) */}
           <div>
-            <div className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2.5">
-              Categories (9)
+            <div className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2.5 flex items-center justify-between">
+              <span>Categories &amp; Submenus</span>
+              <span className="text-[10px] font-bold text-amber-600">6 Groups</span>
             </div>
-            <div className="space-y-1">
+            
+            <div className="space-y-1.5">
+              {CATEGORY_GROUPS.map((group) => {
+                const isExpanded = expandedGroup === group.label;
+                return (
+                  <div
+                    key={group.label}
+                    className="border border-slate-200/80 rounded-xl overflow-hidden bg-white shadow-2xs"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setExpandedGroup(isExpanded ? null : group.label)}
+                      className="w-full min-h-[44px] flex items-center justify-between px-3.5 py-2.5 text-left bg-white hover:bg-slate-50 transition"
+                      aria-expanded={isExpanded}
+                    >
+                      <span className="text-xs font-bold text-slate-900">{group.label}</span>
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
+                          isExpanded ? 'rotate-180 text-amber-600' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {isExpanded && (
+                      <div className="bg-slate-50/80 px-2 py-2 space-y-1 border-t border-slate-100">
+                        {group.subcategories.map((sub) => (
+                          <Link
+                            key={sub.name}
+                            href={sub.slug === 'search' ? '/search' : `/categories/${sub.slug}`}
+                            onClick={onClose}
+                            className="min-h-[40px] flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-700 hover:text-amber-950 hover:bg-amber-100/60 rounded-lg transition"
+                          >
+                            <span>{sub.name}</span>
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                          </Link>
+                        ))}
+                        <Link
+                          href={`/categories/${group.primaryCategorySlug}`}
+                          onClick={onClose}
+                          className="min-h-[36px] flex items-center justify-between px-3 py-2 text-xs font-bold text-amber-700 hover:text-amber-800 border-t border-slate-200/60 mt-1 transition"
+                        >
+                          <span>Explore all {group.label}</span>
+                          <span>→</span>
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Quick Link to All 9 Database Catalog Categories */}
+          <div>
+            <div className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2">
+              All Materials (9)
+            </div>
+            <div className="grid grid-cols-1 gap-1">
               {SEED_CATEGORIES.map((cat) => (
                 <Link
                   key={cat.id}
                   href={`/categories/${cat.slug}`}
                   onClick={onClose}
-                  className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-100 text-slate-800 text-xs font-bold transition group"
+                  className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-100 text-slate-700 text-xs font-medium transition"
                 >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2">
                     {CATEGORY_ICONS[cat.slug] || <Building className="w-4 h-4 text-amber-600" />}
                     <span>{cat.name}</span>
                   </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-900 group-hover:translate-x-0.5 transition-all" />
+                  <ChevronRight className="w-3 h-3 text-slate-400" />
                 </Link>
               ))}
             </div>
           </div>
 
           {/* Customer Service & Policies */}
-          <div className="pt-4 border-t border-slate-100 space-y-2 text-xs">
+          <div className="pt-3 border-t border-slate-100 space-y-1.5 text-xs">
             <Link
               href="/about"
               onClick={onClose}
@@ -215,27 +279,38 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
               onClick={onClose}
               className="block py-1 text-slate-600 hover:text-slate-950 font-medium"
             >
-              Site Delivery & Unloading Policy
+              Site Delivery &amp; Unloading Policy
             </Link>
             <Link
               href="/returns"
               onClick={onClose}
               className="block py-1 text-slate-600 hover:text-slate-950 font-medium"
             >
-              Material Inspection & Returns
+              Material Inspection &amp; Returns
             </Link>
             <Link
               href="/contact"
               onClick={onClose}
               className="block py-1 text-slate-600 hover:text-slate-950 font-medium"
             >
-              Contact & Hub Directory
+              Contact &amp; Hub Directory
             </Link>
+
+            <div className="pt-2 flex flex-col gap-1.5">
+              <Link
+                href="/supplier"
+                onClick={onClose}
+                className="flex items-center gap-2 p-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs"
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Supplier Fulfilment Hub</span>
+              </Link>
+            </div>
           </div>
 
         </div>
 
-        {/* Drawer Footer */}
+        {/* Drawer Footer with Direct Helpline */}
         <div className="p-4 border-t border-slate-200 bg-slate-50">
           <a
             href={`tel:${BRAND_CONFIG.supportPhone.replace(/\s+/g, '')}`}

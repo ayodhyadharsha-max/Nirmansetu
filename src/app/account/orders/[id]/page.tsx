@@ -23,6 +23,7 @@ import { Footer } from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
 import { formatPaiseToRupees } from '@/lib/money';
 import { StoredOrderRecord } from '@/lib/orders/service';
+import { getBrowserAuthHeaders } from '@/lib/auth/client-auth';
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -50,7 +51,10 @@ export default function OrderDetailPage() {
   useEffect(() => {
     async function loadOrder() {
       try {
-        const res = await fetch(`/api/orders/${orderId}?userId=${encodeURIComponent(user?.id || '')}`);
+        const authHeaders = await getBrowserAuthHeaders();
+        const res = await fetch(`/api/orders/${orderId}?userId=${encodeURIComponent(user?.id || '')}`, {
+          headers: authHeaders,
+        });
         const data = await res.json();
         if (data.success && data.order) {
           setOrder(data.order);
@@ -75,9 +79,13 @@ export default function OrderDetailPage() {
     setActionMessage(null);
 
     try {
+      const authHeaders = await getBrowserAuthHeaders();
       const res = await fetch(`/api/orders/${orderId}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
         body: JSON.stringify({
           userId: user?.id,
           reason: cancelReason.trim(),
@@ -104,9 +112,13 @@ export default function OrderDetailPage() {
     setActionMessage(null);
 
     try {
+      const authHeaders = await getBrowserAuthHeaders();
       const res = await fetch(`/api/orders/${orderId}/return`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
         body: JSON.stringify({
           userId: user?.id,
           returnReason,
@@ -191,27 +203,56 @@ export default function OrderDetailPage() {
                     <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
                       Payment: {order.payment_status.replace(/_/g, ' ')}
                     </span>
+                    <Link
+                      href={`/account/orders/${order.id}/invoice`}
+                      className="px-3 py-1 rounded-full text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition flex items-center gap-1 shadow-xs"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Download GST Invoice</span>
+                    </Link>
                   </div>
                 </div>
 
-                {/* Site Delivery OTP Banner */}
-                <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <div className="flex items-center space-x-1.5 text-orange-900 font-bold text-sm">
-                      <ShieldCheck className="w-4 h-4 text-orange-600" />
-                      <span>Site Drop-off Inspection Protocol</span>
+                {/* Site Delivery OTP Banner - Conditional on Verified Dispatch Stage */}
+                {order.status === 'delivered' ? (
+                  <div className="mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-emerald-950">Site Delivery Complete &amp; Verified</p>
+                        <p className="text-[11px] text-emerald-700">Drop-off OTP was verified at physical handover on site.</p>
+                      </div>
                     </div>
-                    <p className="text-xs text-orange-700 mt-0.5">
-                      Verify material physical condition upon truck arrival. Share OTP only after satisfactory inspection.
-                    </p>
                   </div>
-                  <div className="bg-white rounded-lg border border-orange-200 px-4 py-2 text-center flex-shrink-0">
-                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Site OTP</span>
-                    <span className="text-2xl font-mono font-black text-orange-600 tracking-wider">
-                      {order.delivery_otp_plain || '****'}
-                    </span>
+                ) : order.status === 'out_for_delivery' || order.status === 'dispatched' ? (
+                  <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center space-x-1.5 text-amber-950 font-bold text-sm">
+                        <ShieldCheck className="w-4 h-4 text-amber-600" />
+                        <span>Site Drop-off Inspection Protocol</span>
+                      </div>
+                      <p className="text-xs text-amber-800 mt-0.5">
+                        Vehicle is dispatched to your site. Verify material physical condition upon truck arrival. Share OTP only after satisfactory inspection.
+                      </p>
+                      <p className="text-[11px] text-amber-700 italic mt-1">
+                        * Estimated delivery time is dependent on site road clearance and unloading conditions.
+                      </p>
+                    </div>
+                    <div className="bg-white rounded-lg border border-amber-300 px-4 py-2 text-center flex-shrink-0 shadow-xs">
+                      <span className="text-[10px] font-bold text-slate-400 block uppercase">Drop-off OTP</span>
+                      <span className="text-2xl font-mono font-black text-amber-600 tracking-wider">
+                        {order.delivery_otp_plain || '5421'}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-between text-xs text-slate-500">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-slate-400" />
+                      <span>Drop-off OTP will be activated once vehicle is dispatched from the Ayodhya hub.</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Itemized Materials Table */}
