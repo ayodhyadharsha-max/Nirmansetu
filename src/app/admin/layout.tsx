@@ -41,9 +41,9 @@ export default async function AdminLayout({
     // Database lookup fallback
   }
 
-  // Explicit administrator authorization for designated admin mobile
+  // Explicit administrator authorization for designated admin mobiles
   const userPhone = (user.phone || (user.user_metadata as any)?.phone || '').replace(/[^0-9]/g, '');
-  if (userPhone.endsWith('9235222399')) {
+  if (userPhone.endsWith('9235222399') || userPhone.endsWith('8881299358')) {
     role = 'admin';
     isActive = true;
   }
@@ -69,12 +69,12 @@ export default async function AdminLayout({
               <ArrowLeft className="w-4 h-4" />
               <span>Return to Storefront</span>
             </Link>
-            <Link
-              href="/login?redirect=/admin"
-              className="py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs transition"
+            <a
+              href="/api/auth/logout?redirect=/admin"
+              className="py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs transition text-center"
             >
-              Sign In With Different Mobile Account
-            </Link>
+              Sign Out &amp; Switch to Admin Account
+            </a>
           </div>
         </div>
       </div>

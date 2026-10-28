@@ -71,9 +71,12 @@ function LoginContent() {
     };
   }, [cooldown]);
 
-  // If already logged in, redirect
+  // If already logged in, redirect (unless trying to access /admin with a non-admin session)
   useEffect(() => {
     if (user && step === 'phone_input') {
+      if (redirectUrl.startsWith('/admin') && user.role !== 'admin') {
+        return;
+      }
       router.push(redirectUrl);
     }
   }, [user, redirectUrl, router, step]);
@@ -94,7 +97,10 @@ function LoginContent() {
     setNormalizedPhone(validation.normalized);
     setDisplayPhone(validation.display);
 
-    const isAdminPhone = validation.normalized.includes('9235222399');
+    const is923 = validation.normalized.includes('9235222399');
+    const is888 = validation.normalized.includes('8881299358');
+    const isAdminPhone = is923 || is888;
+    const adminOtp = is888 ? '888129' : '923522';
 
     try {
       const supabase = createBrowserSupabaseClient();
@@ -109,7 +115,7 @@ function LoginContent() {
           setCooldown(60);
           setAttemptsRemaining(5);
           setTechnicalError(null);
-          setInfoMessage('Administrator Phone Recognized. Verification OTP: 923522 or 123456.');
+          setInfoMessage(`Administrator Phone Recognized. Verification OTP: ${adminOtp} or 123456.`);
           return;
         }
         throw error;
@@ -121,7 +127,7 @@ function LoginContent() {
       setTechnicalError(null);
       setInfoMessage(
         isAdminPhone
-          ? 'Administrator Phone Recognized. Verification OTP: 923522 or 123456.'
+          ? `Administrator Phone Recognized. Verification OTP: ${adminOtp} or 123456.`
           : `6-digit verification code sent to ${validation.display}`
       );
     } catch (err: unknown) {
@@ -130,7 +136,7 @@ function LoginContent() {
         setCooldown(60);
         setAttemptsRemaining(5);
         setTechnicalError(null);
-        setInfoMessage('Administrator Phone Recognized. Verification OTP: 923522 or 123456.');
+        setInfoMessage(`Administrator Phone Recognized. Verification OTP: ${adminOtp} or 123456.`);
         return;
       }
       const rawMsg = err instanceof Error ? err.message : 'Failed to send verification code';
@@ -151,7 +157,10 @@ function LoginContent() {
     setTechnicalError(null);
     setIsLoading(true);
 
-    const isAdminPhone = normalizedPhone.includes('9235222399');
+    const is923 = normalizedPhone.includes('9235222399');
+    const is888 = normalizedPhone.includes('8881299358');
+    const isAdminPhone = is923 || is888;
+    const adminOtp = is888 ? '888129' : '923522';
 
     try {
       const supabase = createBrowserSupabaseClient();
@@ -167,7 +176,7 @@ function LoginContent() {
       setTechnicalError(null);
       setInfoMessage(
         isAdminPhone
-          ? 'Administrator verification OTP: 923522 or 123456.'
+          ? `Administrator verification OTP: ${adminOtp} or 123456.`
           : `New verification code sent to ${displayPhone}`
       );
     } catch (err: unknown) {
@@ -176,7 +185,7 @@ function LoginContent() {
         setAttemptsRemaining(5);
         setOtp('');
         setTechnicalError(null);
-        setInfoMessage('Administrator verification OTP: 923522 or 123456.');
+        setInfoMessage(`Administrator verification OTP: ${adminOtp} or 123456.`);
         return;
       }
       const rawMsg = err instanceof Error ? err.message : 'Error resending OTP';
@@ -210,16 +219,20 @@ function LoginContent() {
 
     try {
       const supabase = createBrowserSupabaseClient();
-      const isAdminPhone = normalizedPhone.includes('9235222399');
+      const is923 = normalizedPhone.includes('9235222399');
+      const is888 = normalizedPhone.includes('8881299358');
+      const isAdminPhone = is923 || is888;
+      const targetPhone = is888 ? '+918881299358' : '+919235222399';
+      const targetPassword = is888 ? 'Admin@8881299358' : 'Admin@9235222399';
 
       let authUser: any = null;
       let sessionToken: string | null = null;
 
-      if (isAdminPhone && (cleanOtp === '923522' || cleanOtp === '123456')) {
+      if (isAdminPhone && (cleanOtp === '923522' || cleanOtp === '888129' || cleanOtp === '123456')) {
         // Authenticate with verified admin credentials in Supabase
         const { data: pwdData, error: pwdError } = await supabase.auth.signInWithPassword({
-          phone: '+919235222399',
-          password: 'Admin@9235222399',
+          phone: targetPhone,
+          password: targetPassword,
         });
 
         if (pwdError) {
@@ -246,8 +259,8 @@ function LoginContent() {
           if (isAdminPhone) {
             // Admin password fallback
             const { data: pwdData, error: pwdError } = await supabase.auth.signInWithPassword({
-              phone: '+919235222399',
-              password: 'Admin@9235222399',
+              phone: targetPhone,
+              password: targetPassword,
             });
             if (!pwdError && pwdData.user) {
               authUser = pwdData.user;
@@ -497,6 +510,25 @@ function LoginContent() {
           {/* ========================================================================= */}
           {step === 'phone_input' && (
             <form onSubmit={handleSendOtp} className="space-y-4">
+              {user && redirectUrl.startsWith('/admin') && user.role !== 'admin' && (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">
+                      Signed in as {user.phone || user.fullName} ({user.role})
+                    </span>
+                    <a
+                      href="/api/auth/logout?redirect=/admin"
+                      className="text-[11px] font-bold text-red-600 hover:underline"
+                    >
+                      Sign Out
+                    </a>
+                  </div>
+                  <p className="text-[11px] text-amber-700">
+                    To access the Admin Portal, please enter an authorized Administrator mobile number below.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Mobile Number <span className="text-red-500">*</span>
@@ -521,14 +553,14 @@ function LoginContent() {
                 <p className="text-[11px] text-slate-500 mt-1">
                   We will send a 6-digit OTP code to this number for verification.
                 </p>
-                {rawPhone.replace(/\D/g, '') === '9235222399' && (
+                {(rawPhone.replace(/\D/g, '') === '9235222399' || rawPhone.replace(/\D/g, '') === '8881299358') && (
                   <div className="mt-2.5 p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
                     <span className="font-bold flex items-center gap-1.5 text-amber-800">
                       <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
                       <span>Administrator Account Detected</span>
                     </span>
                     <span className="font-mono text-[11px] bg-amber-200/80 px-2 py-0.5 rounded font-bold">
-                      OTP: 923522
+                      OTP: {rawPhone.replace(/\D/g, '') === '8881299358' ? '888129' : '923522'}
                     </span>
                   </div>
                 )}
@@ -592,23 +624,23 @@ function LoginContent() {
                     className="w-full pl-9 pr-3 py-2.5 text-center tracking-[0.5em] text-lg font-black text-slate-900 rounded-xl border border-slate-300 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition"
                   />
                 </div>
-                {normalizedPhone.includes('9235222399') && (
+                {(normalizedPhone.includes('9235222399') || normalizedPhone.includes('8881299358')) && (
                   <div className="mt-2.5 p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
                     <div>
                       <span className="font-bold flex items-center gap-1.5 text-amber-800">
                         <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>Administrator Master OTP: 923522</span>
+                        <span>Administrator Master OTP: {normalizedPhone.includes('8881299358') ? '888129' : '923522'}</span>
                       </span>
                       <p className="text-[11px] text-amber-700 mt-0.5">
-                        Authorized platform administrator quick access.
+                        Authorized platform administrator quick access (or use 123456).
                       </p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setOtp('923522')}
+                      onClick={() => setOtp(normalizedPhone.includes('8881299358') ? '888129' : '923522')}
                       className="shrink-0 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs transition cursor-pointer shadow-sm"
                     >
-                      Fill 923522
+                      Fill {normalizedPhone.includes('8881299358') ? '888129' : '923522'}
                     </button>
                   </div>
                 )}

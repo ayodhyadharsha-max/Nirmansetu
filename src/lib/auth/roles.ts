@@ -140,9 +140,9 @@ export async function getAuthenticatedServerSession(request?: Request): Promise<
     let role: UserRole = profile?.role || 'customer';
     let isActive = profile?.is_active ?? true;
 
-    // Explicit administrator authorization for designated operations mobile
+    // Explicit administrator authorization for designated operations mobiles
     const userPhone = (user.phone || profile?.phone || (user.user_metadata as any)?.phone || '').replace(/[^0-9]/g, '');
-    if (userPhone.endsWith('9235222399')) {
+    if (userPhone.endsWith('9235222399') || userPhone.endsWith('8881299358')) {
       role = 'admin';
       isActive = true;
     }
