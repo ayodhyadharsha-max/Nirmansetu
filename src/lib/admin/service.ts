@@ -13,10 +13,12 @@
  */
 
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { logAuditEvent, AuthenticatedUserSession, memoryAuditLogs, requireAdmin } from '@/lib/auth/roles';
 import { memoryOrders, StoredOrderRecord } from '@/lib/orders/service';
 import { memorySuppliers, memorySupplierPos, StoredSupplier, StoredSupplierPo } from '@/lib/suppliers/service';
 import { SEED_CATALOG_ITEMS, SEED_CATEGORIES, SEED_BRANDS } from '@/lib/catalog/seed-data';
+import { ALL_HOMERUN_PRODUCTS } from '@/config/homerun-catalog';
 import { SEED_COUPONS, CouponRecord } from '@/lib/coupons/service';
 import { OrderStatus, PaymentStatus, SupplierPoStatus, UserRole } from '@/types/database';
 import { AYODHYA_REGIONAL_HUBS } from '@/config/brand';
@@ -69,27 +71,10 @@ async function withQueryTimeout<T>(promise: PromiseLike<T>, timeoutMs = 1200, fa
 }
 
 /**
- * Computes live, verified dashboard metrics directly from order transactions.
+ * Computes live, verified dashboard metrics directly from order transactions in Supabase DB.
  */
 export async function getDashboardMetrics(): Promise<DashboardMetrics> {
-  const allOrders: StoredOrderRecord[] = Array.from(memoryOrders.values());
-
-  // Also query DB if active with strict timeout to prevent hangs
-  try {
-    const supabase = createServerSupabaseClient();
-    const query = supabase.from('orders').select('*');
-    const res = await withQueryTimeout<any>(query, 1200, { data: null });
-    const dbOrders = res?.data;
-    if (dbOrders) {
-      for (const dbo of dbOrders) {
-        if (!allOrders.some((o) => o.id === dbo.id)) {
-          allOrders.push(dbo as any);
-        }
-      }
-    }
-  } catch {
-    // Handled
-  }
+  const allOrders = await listAllOrdersAdmin();
 
   let totalRevenuePaise = 0;
   let totalGstCollectedPaise = 0;
@@ -97,33 +82,56 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   let pendingOrdersCount = 0;
 
   for (const order of allOrders) {
-    if (order.status === 'delivered' || order.payment_status === 'paid') {
+    if (order.status === 'delivered' || order.payment_status === 'paid' || order.status === 'confirmed' || order.status === 'po_issued') {
       totalRevenuePaise += order.total_paise || 0;
       totalGstCollectedPaise += order.tax_paise || 0;
     }
 
     if (order.status === 'delivered') {
       deliveredOrdersCount++;
-    } else if (['draft', 'submitted', 'confirmed', 'po_issued', 'materials_packed', 'out_for_delivery'].includes(order.status)) {
+    } else if (['draft', 'submitted', 'confirmed', 'po_issued', 'materials_packed', 'out_for_delivery', 'supplier_assigned', 'dispatched'].includes(order.status)) {
       pendingOrdersCount++;
     }
   }
 
-  // Suppliers counts
-  const allSuppliers: StoredSupplier[] = Array.from(memorySuppliers.values());
-  const activeSuppliersCount = allSuppliers.filter((s) => s.verification_status === 'verified').length;
-  const pendingSupplierApplications = allSuppliers.filter((s) => s.verification_status === 'pending').length;
+  // Suppliers counts from PostgreSQL with memory fallback
+  let activeSuppliersCount = 0;
+  let pendingSupplierApplications = 0;
+  try {
+    const adminSupabase = createAdminClient();
+    const { data: dbSuppliers } = await adminSupabase.from('suppliers').select('verification_status');
+    if (dbSuppliers && dbSuppliers.length > 0) {
+      activeSuppliersCount = dbSuppliers.filter((s) => s.verification_status === 'verified').length;
+      pendingSupplierApplications = dbSuppliers.filter((s) => s.verification_status === 'pending').length;
+    } else {
+      const allSuppliers: StoredSupplier[] = Array.from(memorySuppliers.values());
+      activeSuppliersCount = allSuppliers.filter((s) => s.verification_status === 'verified').length;
+      pendingSupplierApplications = allSuppliers.filter((s) => s.verification_status === 'pending').length;
+    }
+  } catch {
+    const allSuppliers: StoredSupplier[] = Array.from(memorySuppliers.values());
+    activeSuppliersCount = allSuppliers.filter((s) => s.verification_status === 'verified').length;
+    pendingSupplierApplications = allSuppliers.filter((s) => s.verification_status === 'pending').length;
+  }
 
   // Category breakdown
   const categoryMap = new Map<string, { count: number; revenuePaise: number }>();
   for (const o of allOrders) {
     if (o.items && Array.isArray(o.items)) {
       for (const item of o.items) {
-        const cat = 'Building Materials';
+        const title = (item.product_title_snapshot || '').toLowerCase();
+        let cat = 'Building Materials';
+        if (title.includes('cement')) cat = 'Cement & Concrete';
+        else if (title.includes('steel') || title.includes('tmt') || title.includes('tiscon')) cat = 'Steel & Rebars';
+        else if (title.includes('wire') || title.includes('cable') || title.includes('havells')) cat = 'Electrical';
+        else if (title.includes('pipe') || title.includes('cpvc') || title.includes('supreme')) cat = 'Plumbing & Pipes';
+        else if (title.includes('paint') || title.includes('primer')) cat = 'Paints & Finishes';
+        else if (title.includes('tile') || title.includes('vitrified')) cat = 'Tiles & Flooring';
+
         const existing = categoryMap.get(cat) || { count: 0, revenuePaise: 0 };
         categoryMap.set(cat, {
-          count: existing.count + item.quantity,
-          revenuePaise: existing.revenuePaise + item.total_paise,
+          count: existing.count + (item.quantity || 1),
+          revenuePaise: existing.revenuePaise + (item.total_paise || 0),
         });
       }
     }
@@ -149,30 +157,92 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     totalGstCollectedPaise,
     activeSuppliersCount,
     pendingSupplierApplications,
-    totalCatalogProducts: SEED_CATALOG_ITEMS.length,
+    totalCatalogProducts: SEED_CATALOG_ITEMS.length + ALL_HOMERUN_PRODUCTS.length,
     categoryBreakdown,
     recentAuditLogs,
   };
 }
 
 /**
- * Lists all orders for platform administrators.
+ * Lists all orders for platform administrators directly from Supabase PostgreSQL (Source of Truth).
  */
 export async function listAllOrdersAdmin(filters?: { status?: string; pincode?: string }): Promise<StoredOrderRecord[]> {
-  let list: StoredOrderRecord[] = Array.from(memoryOrders.values());
+  const ordersMap = new Map<string, StoredOrderRecord>();
 
-  if (filters?.status) {
-    list = list.filter((o) => o.status === filters.status);
-  }
-  if (filters?.pincode) {
-    list = list.filter((o) => o.pincode === filters.pincode);
+  // 1. Fetch from Supabase PostgreSQL
+  try {
+    const adminSupabase = createAdminClient();
+    let query = adminSupabase
+      .from('orders')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (filters?.status) {
+      query = query.eq('status', filters.status);
+    }
+    if (filters?.pincode) {
+      query = query.eq('pincode', filters.pincode);
+    }
+
+    const { data: dbOrders, error: ordersError } = await query;
+    if (!ordersError && dbOrders && dbOrders.length > 0) {
+      const orderIds = dbOrders.map((o) => o.id);
+
+      // Fetch all items and status histories in parallel
+      const [itemsRes, historyRes] = await Promise.all([
+        adminSupabase.from('order_items').select('*').in('order_id', orderIds),
+        adminSupabase.from('order_status_history').select('*').in('order_id', orderIds).order('created_at', { ascending: true }),
+      ]);
+
+      const itemsByOrder = new Map<string, any[]>();
+      if (itemsRes.data) {
+        for (const itm of itemsRes.data) {
+          const list = itemsByOrder.get(itm.order_id) || [];
+          list.push(itm);
+          itemsByOrder.set(itm.order_id, list);
+        }
+      }
+
+      const historyByOrder = new Map<string, any[]>();
+      if (historyRes.data) {
+        for (const h of historyRes.data) {
+          const list = historyByOrder.get(h.order_id) || [];
+          list.push(h);
+          historyByOrder.set(h.order_id, list);
+        }
+      }
+
+      for (const dbo of dbOrders) {
+        const fullOrder: StoredOrderRecord = {
+          ...dbo,
+          delivery_otp_plain: dbo.delivery_otp_plain || '****',
+          items: itemsByOrder.get(dbo.id) || [],
+          status_history: historyByOrder.get(dbo.id) || [],
+        };
+        ordersMap.set(fullOrder.id, fullOrder);
+        // Also populate in-memory map for fulfillment service consistency
+        memoryOrders.set(fullOrder.id, fullOrder);
+      }
+    }
+  } catch (err) {
+    console.warn('[listAllOrdersAdmin] Failed to query PostgreSQL orders:', err);
   }
 
-  return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  // 2. Supplement with any un-flushed in-memory orders
+  for (const o of Array.from(memoryOrders.values())) {
+    if (!ordersMap.has(o.id)) {
+      if (filters?.status && o.status !== filters.status) continue;
+      if (filters?.pincode && o.pincode !== filters.pincode) continue;
+      ordersMap.set(o.id, o);
+    }
+  }
+
+  const result = Array.from(ordersMap.values());
+  return result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
 /**
- * Updates order status from the admin console with full audit trail.
+ * Updates order status from the admin console with database persistence and full audit trail.
  */
 export async function updateOrderStatusAdmin(
   orderId: string,
@@ -180,31 +250,80 @@ export async function updateOrderStatusAdmin(
   adminSession: AuthenticatedUserSession,
   notes?: string
 ): Promise<{ success: boolean; order?: StoredOrderRecord; error?: string }> {
-  const order = memoryOrders.get(orderId);
+  let order = memoryOrders.get(orderId);
+  const adminSupabase = createAdminClient();
+
+  if (!order) {
+    try {
+      const { data: dbOrder } = await adminSupabase.from('orders').select('*').eq('id', orderId).maybeSingle();
+      if (dbOrder) {
+        const [itemsRes, histRes] = await Promise.all([
+          adminSupabase.from('order_items').select('*').eq('order_id', orderId),
+          adminSupabase.from('order_status_history').select('*').eq('order_id', orderId).order('created_at', { ascending: true }),
+        ]);
+        const foundOrder: StoredOrderRecord = {
+          ...dbOrder,
+          items: itemsRes.data || [],
+          status_history: histRes.data || [],
+        };
+        order = foundOrder;
+        memoryOrders.set(foundOrder.id, foundOrder);
+      }
+    } catch {
+      // Handled
+    }
+  }
+
   if (!order) {
     return { success: false, error: 'Order not found' };
   }
 
   const prevStatus = order.status;
+  const now = new Date().toISOString();
   order.status = newStatus;
-  order.updated_at = new Date().toISOString();
+  order.updated_at = now;
 
   if (newStatus === 'delivered') {
-    order.delivered_at = new Date().toISOString();
+    order.delivered_at = now;
   } else if (newStatus === 'cancelled') {
-    order.cancelled_at = new Date().toISOString();
+    order.cancelled_at = now;
     order.cancellation_reason = notes || 'Cancelled by administrator';
   }
 
-  order.status_history.push({
+  const historyEntry = {
     id: `sh-admin-${Date.now()}`,
     order_id: order.id,
     previous_status: prevStatus,
     new_status: newStatus,
     changed_by: adminSession.id,
     notes: notes || `Status updated to ${newStatus} by platform administrator`,
-    created_at: new Date().toISOString(),
-  });
+    created_at: now,
+  };
+
+  order.status_history.push(historyEntry);
+  memoryOrders.set(order.id, order);
+
+  // Persist to Supabase PostgreSQL
+  try {
+    await adminSupabase.from('orders').update({
+      status: newStatus,
+      delivered_at: order.delivered_at || null,
+      cancelled_at: order.cancelled_at || null,
+      cancellation_reason: order.cancellation_reason || null,
+      updated_at: now,
+    }).eq('id', order.id);
+
+    await adminSupabase.from('order_status_history').insert({
+      id: crypto.randomUUID(),
+      order_id: order.id,
+      previous_status: prevStatus,
+      new_status: newStatus,
+      changed_by: adminSession.id,
+      notes: historyEntry.notes,
+    });
+  } catch (dbErr) {
+    console.error('[updateOrderStatusAdmin] Failed to update PostgreSQL order status:', dbErr);
+  }
 
   await logAuditEvent({
     userId: adminSession.id,
@@ -227,12 +346,47 @@ export async function issueSupplierPoAdmin(params: {
   notes?: string;
   adminSession: AuthenticatedUserSession;
 }): Promise<{ success: boolean; po?: StoredSupplierPo; error?: string }> {
-  const order = memoryOrders.get(params.orderId);
+  let order = memoryOrders.get(params.orderId);
+  const adminSupabase = createAdminClient();
+
+  if (!order) {
+    try {
+      const { data: dbOrder } = await adminSupabase.from('orders').select('*').eq('id', params.orderId).maybeSingle();
+      if (dbOrder) {
+        const [itemsRes, histRes] = await Promise.all([
+          adminSupabase.from('order_items').select('*').eq('order_id', params.orderId),
+          adminSupabase.from('order_status_history').select('*').eq('order_id', params.orderId).order('created_at', { ascending: true }),
+        ]);
+        const foundOrder: StoredOrderRecord = {
+          ...dbOrder,
+          items: itemsRes.data || [],
+          status_history: histRes.data || [],
+        };
+        order = foundOrder;
+        memoryOrders.set(foundOrder.id, foundOrder);
+      }
+    } catch {
+      // Handled
+    }
+  }
+
   if (!order) {
     return { success: false, error: 'Order not found' };
   }
 
-  const supplier = memorySuppliers.get(params.supplierId);
+  let supplier = memorySuppliers.get(params.supplierId);
+  if (!supplier) {
+    try {
+      const { data: dbSupp } = await adminSupabase.from('suppliers').select('*').eq('id', params.supplierId).maybeSingle();
+      if (dbSupp) {
+        supplier = dbSupp as any;
+        memorySuppliers.set(params.supplierId, supplier!);
+      }
+    } catch {
+      // Handled
+    }
+  }
+
   if (!supplier) {
     return { success: false, error: 'Supplier not found' };
   }
@@ -282,7 +436,7 @@ export async function issueSupplierPoAdmin(params: {
   list.unshift(po);
   memorySupplierPos.set(supplier.id, list);
 
-  // Transition order status to po_issued
+  // Transition order status to po_issued and persist to PostgreSQL
   await updateOrderStatusAdmin(order.id, 'po_issued', params.adminSession, `Supplier PO ${poNumber} issued to ${supplier.business_name}`);
 
   await logAuditEvent({

@@ -47,13 +47,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, customers: demoCustomers });
     }
 
-    // Attach order count
-    const allOrders = Array.from(memoryOrders.values());
+    // Attach order count from Supabase PostgreSQL orders table
+    let dbOrders: any[] = [];
+    try {
+      const { data } = await supabase.from('orders').select('id, user_id');
+      if (data) dbOrders = data;
+    } catch {
+      // Handled
+    }
+    const memOrders = Array.from(memoryOrders.values());
     const customersWithOrders = (profiles || []).map((p) => {
-      const orderCount = allOrders.filter((o) => o.user_id === p.id).length;
+      const dbCount = dbOrders.filter((o) => o.user_id === p.id).length;
+      const memCount = memOrders.filter((o) => o.user_id === p.id && !dbOrders.some((dbo) => dbo.id === o.id)).length;
       return {
         ...p,
-        orders_count: orderCount,
+        orders_count: dbCount + memCount,
       };
     });
 

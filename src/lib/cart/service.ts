@@ -11,7 +11,7 @@
 
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { SEED_CATALOG_ITEMS } from '@/lib/catalog/seed-data';
-import { ALL_HOMERUN_PRODUCTS } from '@/config/homerun-catalog';
+import { ALL_HOMERUN_PRODUCTS, generateRealisticOptions } from '@/config/homerun-catalog';
 import { calculateOrderTotals, calculateTaxPaise } from '@/lib/money';
 import { validateCoupon, CouponRecord } from '@/lib/coupons/service';
 import { AYODHYA_REGIONAL_HUBS, BRAND_CONFIG } from '@/config/brand';
@@ -68,8 +68,138 @@ const memoryCarts = new Map<string, {
   updatedAt: Date;
 }>();
 
+// Category helper: Maps product title and brand to authoritative PostgreSQL foreign key variant UUID, statutory HSN, and GST
+function getCategorySeedAndTax(productOrTitle: string, brand?: string): {
+  variant_id: string;
+  product_id: string;
+  hsn_code: string;
+  default_unit: string;
+  tax_rate_pct: number;
+} {
+  const text = `${productOrTitle} ${brand || ''}`.toLowerCase();
+
+  // 1. Steel & TMT Rebars
+  if (text.includes('tiscon') || text.includes('tmt') || text.includes('steel') || text.includes('rebar')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000002',
+      product_id: 'd0000000-0000-0000-0000-000000000002',
+      hsn_code: '721420',
+      default_unit: 'pieces',
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // 2. Cement, Plaster, Mortar, Putty
+  if (text.includes('cement') || text.includes('ultratech') || text.includes('ambuja') || text.includes('acc') || text.includes('plaster') || text.includes('mortar') || text.includes('putty')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000001',
+      product_id: 'd0000000-0000-0000-0000-000000000001',
+      hsn_code: '252329',
+      default_unit: 'bags (50kg)',
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // 3. Tiles & Flooring
+  if (text.includes('tile') || text.includes('kajaria') || text.includes('vitrified') || text.includes('ceramic') || text.includes('somany')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000004',
+      product_id: 'd0000000-0000-0000-0000-000000000003',
+      hsn_code: '690721',
+      default_unit: 'boxes',
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // 4. Paints, Primers, Waterproofing
+  if (text.includes('paint') || text.includes('primer') || text.includes('waterproof') || text.includes('emulsion') || text.includes('dr. fixit') || text.includes('asian paints') || text.includes('berger') || text.includes('nerolac')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000005',
+      product_id: 'd0000000-0000-0000-0000-000000000004',
+      hsn_code: '320910',
+      default_unit: 'litres',
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // 5. Electrical, Wires, Cables, Switches, MCB
+  if (text.includes('wire') || text.includes('cable') || text.includes('havells') || text.includes('polycab') || text.includes('anchor') || text.includes('mcb') || text.includes('switch') || text.includes('electrical')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000006',
+      product_id: 'd0000000-0000-0000-0000-000000000005',
+      hsn_code: '854449',
+      default_unit: 'coils (90m)',
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // 6. Plumbing, Pipes, Fittings, CPVC, UPVC
+  if (text.includes('pipe') || text.includes('cpvc') || text.includes('upvc') || text.includes('fitting') || text.includes('supreme') || text.includes('astral') || text.includes('plumbing')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000007',
+      product_id: 'd0000000-0000-0000-0000-000000000006',
+      hsn_code: '391723',
+      default_unit: 'metres',
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // 7. Sanitaryware, Bathroom Fittings, Faucets
+  if (text.includes('basin') || text.includes('toilet') || text.includes('mixer') || text.includes('jaquar') || text.includes('cera') || text.includes('sanitary') || text.includes('faucet') || text.includes('shower')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000008',
+      product_id: 'd0000000-0000-0000-0000-000000000007',
+      hsn_code: '848180',
+      default_unit: 'units',
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // 8. Plywood, Boards, Laminates, MDF, HDHMR
+  if (text.includes('plywood') || text.includes('board') || text.includes('greenply') || text.includes('century') || text.includes('hdhmr') || text.includes('mdf') || text.includes('laminate') || text.includes('tesa')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000009',
+      product_id: 'd0000000-0000-0000-0000-000000000008',
+      hsn_code: '441233',
+      default_unit: "sheets (8'x4')",
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // 9. Hardware, Tools, Fasteners, Locks, Binding Wire, Adhesives, Fevicol
+  if (text.includes('lock') || text.includes('godrej') || text.includes('tool') || text.includes('grinder') || text.includes('drill') || text.includes('hardware') || text.includes('fevicol') || text.includes('adhesive')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000010',
+      product_id: 'd0000000-0000-0000-0000-000000000009',
+      hsn_code: '830140',
+      default_unit: 'units',
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // 10. Water Tanks, Kitchen, Sinks
+  if (text.includes('tank') || text.includes('sintex') || text.includes('sink') || text.includes('kitchen')) {
+    return {
+      variant_id: 'e0000000-0000-0000-0000-000000000011',
+      product_id: 'd0000000-0000-0000-0000-000000000010',
+      hsn_code: '392510',
+      default_unit: 'units',
+      tax_rate_pct: 18.0,
+    };
+  }
+
+  // Default to General Building Material (UltraTech PPC seed)
+  return {
+    variant_id: 'e0000000-0000-0000-0000-000000000001',
+    product_id: 'd0000000-0000-0000-0000-000000000001',
+    hsn_code: '252329',
+    default_unit: 'units',
+    tax_rate_pct: 18.0,
+  };
+}
+
 /**
- * Finds variant details from trusted catalog sources (database or verified seed data).
+ * Finds variant details from trusted catalog sources (database, verified seed data, or homerun catalog).
  * Authoritatively validates any client-provided variant ID, option identifier, or catalog slug.
  */
 export async function getTrustedVariantDetails(variantId: string): Promise<Omit<CartItemDetail, 'id' | 'cart_id' | 'quantity' | 'total_line_paise' | 'validation_warnings'> | null> {
@@ -146,49 +276,47 @@ export async function getTrustedVariantDetails(variantId: string): Promise<Omit<
     };
   }
 
-  // 3. Option matching in ALL_HOMERUN_PRODUCTS (e.g. 'v-havells-0.75sqmm', 'havells-0.75sqmm', etc.)
+  // 3. Option matching in ALL_HOMERUN_PRODUCTS (explicit options or dynamic options from ProductOptionsModal)
   for (const prod of ALL_HOMERUN_PRODUCTS) {
-    const matchedOpt = prod.options?.find(
-      (o) =>
-        o.id === cleanId ||
-        o.id === unPrefixed ||
-        `v-${o.id}` === cleanId ||
-        `${prod.id}-${o.id}` === cleanId ||
-        `${prod.id}-${o.id}` === unPrefixed
-    );
+    const allOptions = generateRealisticOptions(prod);
+    const matchedOpt = allOptions.find((o) => {
+      if (o.id === cleanId || o.id === unPrefixed) return true;
+      if (`v-${o.id}` === cleanId) return true;
+      if (`${prod.id}-${o.id}` === cleanId || `${prod.id}-${o.id}` === unPrefixed) return true;
+      if (`v-${prod.id}-${o.id}` === cleanId) return true;
+      // If unPrefixed is e.g. "deal-1-50kg" and prod.id is "deal-1"
+      if (unPrefixed.startsWith(`${prod.id}-`)) {
+        const optSuffix = unPrefixed.slice(prod.id.length + 1);
+        if (o.id === optSuffix || o.id === unPrefixed || o.id.endsWith(optSuffix)) return true;
+      }
+      return false;
+    });
 
     if (matchedOpt) {
-      // Find base seed product to inherit valid PostgreSQL foreign-key variant UUID and statutory HSN
-      const baseSeed =
-        SEED_CATALOG_ITEMS.find((s) => s.product_slug === prod.slug || s.product_id === prod.id) ||
-        SEED_CATALOG_ITEMS.find((s) => s.brand_name && s.brand_name.toLowerCase() === prod.brand.toLowerCase());
-
-      const effectiveVariantId = baseSeed ? baseSeed.variant_id : 'e0000000-0000-0000-0000-000000000006';
-      const effectiveProductId = baseSeed ? baseSeed.product_id : 'd0000000-0000-0000-0000-000000000005';
-      const effectiveHsn = baseSeed?.hsn_code || (prod.brand.toLowerCase().includes('havells') ? '854449' : '252329');
-      const unit = baseSeed?.unit_of_measure || (matchedOpt.packSize?.includes('Coil') ? '90m coil' : 'units');
+      const catInfo = getCategorySeedAndTax(prod.title, prod.brand);
+      const unit = matchedOpt.packSize?.includes('Coil') ? '90m coil' : (matchedOpt.title?.includes('Bag') ? '50kg bag' : catInfo.default_unit);
 
       return {
-        variant_id: effectiveVariantId,
-        product_id: effectiveProductId,
+        variant_id: catInfo.variant_id,
+        product_id: catInfo.product_id,
         product_title: prod.title,
-        variant_title: matchedOpt.title || matchedOpt.name || matchedOpt.packSize || baseSeed?.variant_title || 'Standard',
+        variant_title: matchedOpt.title || matchedOpt.name || matchedOpt.packSize || 'Standard Pack',
         sku: `SKU-${matchedOpt.id.toUpperCase().replace(/[^A-Z0-9]/g, '-')}`,
         unit_of_measure: unit,
-        hsn_code: effectiveHsn,
+        hsn_code: catInfo.hsn_code,
         unit_price_paise: matchedOpt.price * 100, // Authoritative server price from product option
         mrp_paise: (matchedOpt.mrp || matchedOpt.price) * 100,
-        gst_rate_pct: Number(baseSeed?.tax_rate_pct || 18.0),
+        gst_rate_pct: catInfo.tax_rate_pct,
         min_order_qty: 1,
         max_order_qty: 500,
-        available_stock: baseSeed?.total_available_stock || 110,
+        available_stock: 500,
         is_available: true,
-        image_url: matchedOpt.imageUrl || prod.imageUrl || baseSeed?.images?.[0] || '/images/placeholder-product.png',
+        image_url: matchedOpt.imageUrl || prod.imageUrl || '/images/placeholder-product.png',
       };
     }
   }
 
-  // 4. Product matching in ALL_HOMERUN_PRODUCTS (e.g. 'v-pop-6', 'pop-6', 'havells-lifeline-plus-25-wire')
+  // 4. Direct product matching in ALL_HOMERUN_PRODUCTS (e.g. 'v-pop-6', 'pop-6', 'havells-lifeline-plus-25-wire')
   const matchedProd = ALL_HOMERUN_PRODUCTS.find(
     (p) =>
       p.id === cleanId ||
@@ -200,31 +328,25 @@ export async function getTrustedVariantDetails(variantId: string): Promise<Omit<
   );
 
   if (matchedProd) {
-    const baseSeed =
-      SEED_CATALOG_ITEMS.find((s) => s.product_slug === matchedProd.slug || s.product_id === matchedProd.id) ||
-      SEED_CATALOG_ITEMS.find((s) => s.brand_name && s.brand_name.toLowerCase() === matchedProd.brand.toLowerCase());
-
-    const effectiveVariantId = baseSeed ? baseSeed.variant_id : 'e0000000-0000-0000-0000-000000000006';
-    const effectiveProductId = baseSeed ? baseSeed.product_id : 'd0000000-0000-0000-0000-000000000005';
-    const effectiveHsn = baseSeed?.hsn_code || (matchedProd.brand.toLowerCase().includes('havells') ? '854449' : '252329');
-    const unit = baseSeed?.unit_of_measure || (matchedProd.title.toLowerCase().includes('wire') ? '90m coil' : 'units');
+    const catInfo = getCategorySeedAndTax(matchedProd.title, matchedProd.brand);
+    const unit = matchedProd.title.toLowerCase().includes('wire') ? '90m coil' : catInfo.default_unit;
 
     return {
-      variant_id: effectiveVariantId,
-      product_id: effectiveProductId,
+      variant_id: catInfo.variant_id,
+      product_id: catInfo.product_id,
       product_title: matchedProd.title,
-      variant_title: matchedProd.options?.[0]?.title || baseSeed?.variant_title || 'Standard',
+      variant_title: matchedProd.options?.[0]?.title || matchedProd.bulkPriceText || 'Standard Unit',
       sku: `SKU-${matchedProd.id.toUpperCase().replace(/[^A-Z0-9]/g, '-')}`,
       unit_of_measure: unit,
-      hsn_code: effectiveHsn,
+      hsn_code: catInfo.hsn_code,
       unit_price_paise: matchedProd.price * 100, // Authoritative server price from homerun catalog
       mrp_paise: matchedProd.mrp * 100,
-      gst_rate_pct: Number(baseSeed?.tax_rate_pct || 18.0),
+      gst_rate_pct: catInfo.tax_rate_pct,
       min_order_qty: 1,
       max_order_qty: 500,
-      available_stock: baseSeed?.total_available_stock || 110,
+      available_stock: 500,
       is_available: true,
-      image_url: matchedProd.imageUrl || baseSeed?.images?.[0] || '/images/placeholder-product.png',
+      image_url: matchedProd.imageUrl || '/images/placeholder-product.png',
     };
   }
 

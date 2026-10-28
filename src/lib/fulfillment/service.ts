@@ -15,13 +15,15 @@
  */
 
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { logAuditEvent, AuthenticatedUserSession } from '@/lib/auth/roles';
-import { memoryOrders, StoredOrderRecord } from '@/lib/orders/service';
+import { memoryOrders, StoredOrderRecord, getOrderDetails } from '@/lib/orders/service';
 import {
   memorySuppliers,
   memorySupplierPos,
   checkSupplierIsolation,
   StoredSupplierPo,
+  StoredSupplier,
 } from '@/lib/suppliers/service';
 import {
   notifySupplierConfirmed,
@@ -60,6 +62,62 @@ export interface PoReconciliationItem {
 // In-memory registry for delivery assignments
 export const memoryDeliveryAssignments = new Map<string, DeliveryAssignmentRecord>(); // order_id -> DeliveryAssignmentRecord
 
+export async function resolveOrder(orderId: string): Promise<StoredOrderRecord | null> {
+  let order = memoryOrders.get(orderId);
+  if (!order) {
+    const details = await getOrderDetails(orderId, undefined, true);
+    if (details.success && details.order) {
+      order = details.order;
+      memoryOrders.set(order.id, order);
+    }
+  }
+  return order || null;
+}
+
+export async function resolveSupplier(supplierId: string): Promise<StoredSupplier | null> {
+  let supplier = memorySuppliers.get(supplierId);
+  if (!supplier) {
+    try {
+      const adminSupabase = createAdminClient();
+      const { data } = await adminSupabase.from('suppliers').select('*').eq('id', supplierId).maybeSingle();
+      if (data) {
+        supplier = data as any;
+        memorySuppliers.set(supplierId, supplier!);
+      }
+    } catch {
+      // Handled
+    }
+  }
+  return supplier || null;
+}
+
+export async function persistOrderChange(order: StoredOrderRecord, statusEntry?: any) {
+  memoryOrders.set(order.id, order);
+  try {
+    const adminSupabase = createAdminClient();
+    await adminSupabase.from('orders').update({
+      status: order.status,
+      delivered_at: order.delivered_at || null,
+      cancelled_at: order.cancelled_at || null,
+      cancellation_reason: order.cancellation_reason || null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', order.id);
+
+    if (statusEntry) {
+      await adminSupabase.from('order_status_history').insert({
+        id: statusEntry.id || `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        order_id: order.id,
+        previous_status: statusEntry.previous_status || null,
+        new_status: statusEntry.new_status || order.status,
+        changed_by: statusEntry.changed_by || null,
+        notes: statusEntry.notes || null,
+      });
+    }
+  } catch (err) {
+    console.warn('[persistOrderChange] PostgreSQL update warning:', err);
+  }
+}
+
 // ==============================================================================
 // 1. ADMIN ASSIGNS SUPPLIER
 // ==============================================================================
@@ -75,12 +133,12 @@ export async function assignSupplierToOrder(
     throw err;
   }
 
-  const order = memoryOrders.get(orderId);
+  const order = await resolveOrder(orderId);
   if (!order) {
     return { success: false, error: 'Order not found.' };
   }
 
-  const supplier = memorySuppliers.get(supplierId);
+  const supplier = await resolveSupplier(supplierId);
   if (!supplier) {
     return { success: false, error: 'Supplier not found.' };
   }
@@ -145,17 +203,19 @@ export async function assignSupplierToOrder(
   // Update order record
   const prevStatus = order.status;
   order.status = 'supplier_assigned';
-  order.status_history.push({
+  const historyEntry = {
     id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     order_id: order.id,
     previous_status: prevStatus,
-    new_status: 'supplier_assigned',
+    new_status: 'supplier_assigned' as any,
     status: 'supplier_assigned',
     changed_by: adminSession.id,
     notes: `Assigned to approved stockist "${supplier.business_name}" (${po.po_number})`,
     created_at: new Date().toISOString(),
-  });
-  memoryOrders.set(order.id, order);
+  };
+  order.status_history.push(historyEntry);
+
+  await persistOrderChange(order, historyEntry);
 
   await logAuditEvent({
     userId: adminSession.id,
@@ -183,16 +243,17 @@ export async function supplierRespondToAssignment(
 ): Promise<{ success: boolean; po?: StoredSupplierPo; order?: StoredOrderRecord; error?: string }> {
   checkSupplierIsolation(supplierId, callerSession);
 
-  const order = memoryOrders.get(orderId);
+  const order = await resolveOrder(orderId);
   if (!order) return { success: false, error: 'Order not found.' };
 
-  const supplier = memorySuppliers.get(supplierId);
+  const supplier = await resolveSupplier(supplierId);
   if (!supplier) return { success: false, error: 'Supplier not found.' };
 
   const poList = memorySupplierPos.get(supplierId) || [];
   const po = poList.find((p) => p.id === poId);
   if (!po) return { success: false, error: 'Purchase Order not found.' };
 
+  let historyEntry: any;
   if (action === 'confirm') {
     po.status = 'accepted';
     po.notes = notes || 'Stock availability confirmed by depot manager.';
@@ -200,7 +261,7 @@ export async function supplierRespondToAssignment(
 
     const prevStatus = order.status;
     order.status = 'supplier_confirmed';
-    order.status_history.push({
+    historyEntry = {
       id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       order_id: order.id,
       previous_status: prevStatus,
@@ -209,7 +270,8 @@ export async function supplierRespondToAssignment(
       changed_by: callerSession.id,
       notes: `Stock confirmed by ${supplier.business_name}. Preparation underway.`,
       created_at: new Date().toISOString(),
-    });
+    };
+    order.status_history.push(historyEntry);
 
     // Notify customer
     await notifySupplierConfirmed({
@@ -233,7 +295,7 @@ export async function supplierRespondToAssignment(
 
     const prevStatus = order.status;
     order.status = 'supplier_rejected';
-    order.status_history.push({
+    historyEntry = {
       id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       order_id: order.id,
       previous_status: prevStatus,
@@ -242,10 +304,11 @@ export async function supplierRespondToAssignment(
       changed_by: callerSession.id,
       notes: `Rejected by ${supplier.business_name}. Reason: ${notes || 'Stock depleted'}. Awaiting admin reassignment.`,
       created_at: new Date().toISOString(),
-    });
+    };
+    order.status_history.push(historyEntry);
   }
 
-  memoryOrders.set(order.id, order);
+  await persistOrderChange(order, historyEntry);
 
   await logAuditEvent({
     userId: callerSession.id,
@@ -274,19 +337,22 @@ export async function reassignAlternativeSupplier(
     throw err;
   }
 
-  const order = memoryOrders.get(orderId);
+  const order = await resolveOrder(orderId);
   if (!order) return { success: false, error: 'Order not found.' };
 
-  order.status_history.push({
+  const historyEntry = {
     id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     order_id: order.id,
     previous_status: order.status,
-    new_status: 'supplier_assigned',
+    new_status: 'supplier_assigned' as any,
     status: 'supplier_assigned',
     changed_by: adminSession.id,
     notes: `Reassigned to alternative merchant. Justification: ${reason}`,
     created_at: new Date().toISOString(),
-  });
+  };
+  order.status_history.push(historyEntry);
+
+  await persistOrderChange(order, historyEntry);
 
   return assignSupplierToOrder(orderId, newSupplierId, adminSession);
 }
@@ -303,7 +369,7 @@ export async function supplierPrepareOrder(
 ): Promise<{ success: boolean; po?: StoredSupplierPo; order?: StoredOrderRecord; error?: string }> {
   checkSupplierIsolation(supplierId, callerSession);
 
-  const order = memoryOrders.get(orderId);
+  const order = await resolveOrder(orderId);
   if (!order) return { success: false, error: 'Order not found.' };
 
   const poList = memorySupplierPos.get(supplierId) || [];
@@ -315,18 +381,19 @@ export async function supplierPrepareOrder(
 
   const prevStatus = order.status;
   order.status = 'processing';
-  order.status_history.push({
+  const historyEntry = {
     id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     order_id: order.id,
     previous_status: prevStatus,
-    new_status: 'processing',
+    new_status: 'processing' as any,
     status: 'processing',
     changed_by: callerSession.id,
     notes: 'Order materials packed and ready for transport loading.',
     created_at: new Date().toISOString(),
-  });
+  };
+  order.status_history.push(historyEntry);
 
-  memoryOrders.set(order.id, order);
+  await persistOrderChange(order, historyEntry);
 
   await logAuditEvent({
     userId: callerSession.id,
@@ -357,7 +424,7 @@ export async function dispatchOrderWithDelivery(
   dispatch: DispatchDetails,
   callerSession: AuthenticatedUserSession
 ): Promise<{ success: boolean; delivery?: DeliveryAssignmentRecord; order?: StoredOrderRecord; error?: string }> {
-  const order = memoryOrders.get(orderId);
+  const order = await resolveOrder(orderId);
   if (!order) return { success: false, error: 'Order not found.' };
 
   // Generate secure 4-digit site drop-off OTP
@@ -388,17 +455,19 @@ export async function dispatchOrderWithDelivery(
   // Update order status
   const prevDispatchStatus = order.status;
   order.status = 'dispatched';
-  order.status_history.push({
+  const historyEntry = {
     id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     order_id: order.id,
     previous_status: prevDispatchStatus,
-    new_status: 'dispatched',
+    new_status: 'dispatched' as any,
     status: 'dispatched',
     changed_by: callerSession.id,
     notes: `Vehicle en route: ${dispatch.driverName} (${dispatch.vehicleRegistrationNumber}). Drop-off OTP generated.`,
     created_at: new Date().toISOString(),
-  });
-  memoryOrders.set(order.id, order);
+  };
+  order.status_history.push(historyEntry);
+
+  await persistOrderChange(order, historyEntry);
 
   // Dispatch customer notification
   await notifyVehicleDispatched({
@@ -445,7 +514,7 @@ export async function recordDeliveryCompletion(
   completionNotes: string | undefined,
   callerSession: AuthenticatedUserSession
 ): Promise<{ success: boolean; delivery?: DeliveryAssignmentRecord; order?: StoredOrderRecord; error?: string }> {
-  const order = memoryOrders.get(orderId);
+  const order = await resolveOrder(orderId);
   if (!order) return { success: false, error: 'Order not found.' };
 
   const delivery = memoryDeliveryAssignments.get(orderId);
@@ -470,17 +539,19 @@ export async function recordDeliveryCompletion(
   const prevDeliveredStatus = order.status;
   order.status = 'delivered';
   order.delivered_at = new Date().toISOString();
-  order.status_history.push({
+  const historyEntry = {
     id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     order_id: order.id,
     previous_status: prevDeliveredStatus,
-    new_status: 'delivered',
+    new_status: 'delivered' as any,
     status: 'delivered',
     changed_by: callerSession.id,
     notes: `Material inspection passed & 4-digit OTP verified at site. ${completionNotes || ''}`,
     created_at: new Date().toISOString(),
-  });
-  memoryOrders.set(order.id, order);
+  };
+  order.status_history.push(historyEntry);
+
+  await persistOrderChange(order, historyEntry);
 
   await notifyDeliveryCompleted({
     id: order.id,
@@ -516,7 +587,7 @@ export async function recordDeliveryFailure(
   retryScheduledAt: string | undefined,
   callerSession: AuthenticatedUserSession
 ): Promise<{ success: boolean; delivery?: DeliveryAssignmentRecord; order?: StoredOrderRecord; error?: string }> {
-  const order = memoryOrders.get(orderId);
+  const order = await resolveOrder(orderId);
   if (!order) return { success: false, error: 'Order not found.' };
 
   const delivery = memoryDeliveryAssignments.get(orderId);
@@ -530,17 +601,19 @@ export async function recordDeliveryFailure(
 
   const prevFailedStatus = order.status;
   order.status = 'failed_delivery';
-  order.status_history.push({
+  const historyEntry = {
     id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     order_id: order.id,
     previous_status: prevFailedStatus,
-    new_status: 'failed_delivery',
+    new_status: 'failed_delivery' as any,
     status: 'failed_delivery',
     changed_by: callerSession.id,
     notes: `Site drop-off failed: ${failureReason}. Retry scheduled: ${retryScheduledAt || 'Contacting contractor'}`,
     created_at: new Date().toISOString(),
-  });
-  memoryOrders.set(order.id, order);
+  };
+  order.status_history.push(historyEntry);
+
+  await persistOrderChange(order, historyEntry);
 
   await logAuditEvent({
     userId: callerSession.id,
