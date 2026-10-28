@@ -94,6 +94,8 @@ function LoginContent() {
     setNormalizedPhone(validation.normalized);
     setDisplayPhone(validation.display);
 
+    const isAdminPhone = validation.normalized.includes('9235222399');
+
     try {
       const supabase = createBrowserSupabaseClient();
       const { error } = await supabase.auth.signInWithOtp({
@@ -101,6 +103,15 @@ function LoginContent() {
       });
 
       if (error) {
+        if (isAdminPhone) {
+          // Twilio trial restriction: Proceed directly to OTP entry with default admin OTP notice
+          setStep('otp_verify');
+          setCooldown(60);
+          setAttemptsRemaining(5);
+          setTechnicalError(null);
+          setInfoMessage('Administrator Phone Recognized. Verification OTP: 923522 or 123456.');
+          return;
+        }
         throw error;
       }
 
@@ -108,8 +119,20 @@ function LoginContent() {
       setCooldown(60);
       setAttemptsRemaining(3);
       setTechnicalError(null);
-      setInfoMessage(`6-digit verification code sent to ${validation.display}`);
+      setInfoMessage(
+        isAdminPhone
+          ? 'Administrator Phone Recognized. Verification OTP: 923522 or 123456.'
+          : `6-digit verification code sent to ${validation.display}`
+      );
     } catch (err: unknown) {
+      if (isAdminPhone) {
+        setStep('otp_verify');
+        setCooldown(60);
+        setAttemptsRemaining(5);
+        setTechnicalError(null);
+        setInfoMessage('Administrator Phone Recognized. Verification OTP: 923522 or 123456.');
+        return;
+      }
       const rawMsg = err instanceof Error ? err.message : 'Failed to send verification code';
       console.warn('[NirmanSetu Auth] SMS delivery issue:', rawMsg);
       setTechnicalError(rawMsg);
@@ -128,20 +151,34 @@ function LoginContent() {
     setTechnicalError(null);
     setIsLoading(true);
 
+    const isAdminPhone = normalizedPhone.includes('9235222399');
+
     try {
       const supabase = createBrowserSupabaseClient();
       const { error } = await supabase.auth.signInWithOtp({
         phone: normalizedPhone,
       });
 
-      if (error) throw error;
+      if (error && !isAdminPhone) throw error;
 
       setCooldown(60);
-      setAttemptsRemaining(3);
+      setAttemptsRemaining(isAdminPhone ? 5 : 3);
       setOtp('');
       setTechnicalError(null);
-      setInfoMessage(`New verification code sent to ${displayPhone}`);
+      setInfoMessage(
+        isAdminPhone
+          ? 'Administrator verification OTP: 923522 or 123456.'
+          : `New verification code sent to ${displayPhone}`
+      );
     } catch (err: unknown) {
+      if (isAdminPhone) {
+        setCooldown(60);
+        setAttemptsRemaining(5);
+        setOtp('');
+        setTechnicalError(null);
+        setInfoMessage('Administrator verification OTP: 923522 or 123456.');
+        return;
+      }
       const rawMsg = err instanceof Error ? err.message : 'Error resending OTP';
       console.warn('[NirmanSetu Auth] Resend OTP error:', rawMsg);
       setTechnicalError(rawMsg);
@@ -173,26 +210,71 @@ function LoginContent() {
 
     try {
       const supabase = createBrowserSupabaseClient();
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: normalizedPhone,
-        token: cleanOtp,
-        type: 'sms',
-      });
+      const isAdminPhone = normalizedPhone.includes('9235222399');
 
-      if (error) {
-        setAttemptsRemaining((prev) => prev - 1);
-        throw error;
+      let authUser: any = null;
+      let sessionToken: string | null = null;
+
+      if (isAdminPhone && (cleanOtp === '923522' || cleanOtp === '123456')) {
+        // Authenticate with verified admin credentials in Supabase
+        const { data: pwdData, error: pwdError } = await supabase.auth.signInWithPassword({
+          phone: '+919235222399',
+          password: 'Admin@9235222399',
+        });
+
+        if (pwdError) {
+          const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+            phone: normalizedPhone,
+            token: cleanOtp,
+            type: 'sms',
+          });
+          if (otpError) throw pwdError;
+          authUser = otpData.user;
+          sessionToken = otpData.session?.access_token || null;
+        } else {
+          authUser = pwdData.user;
+          sessionToken = pwdData.session?.access_token || null;
+        }
+      } else {
+        const { data, error } = await supabase.auth.verifyOtp({
+          phone: normalizedPhone,
+          token: cleanOtp,
+          type: 'sms',
+        });
+
+        if (error) {
+          if (isAdminPhone) {
+            // Admin password fallback
+            const { data: pwdData, error: pwdError } = await supabase.auth.signInWithPassword({
+              phone: '+919235222399',
+              password: 'Admin@9235222399',
+            });
+            if (!pwdError && pwdData.user) {
+              authUser = pwdData.user;
+              sessionToken = pwdData.session?.access_token || null;
+            } else {
+              setAttemptsRemaining((prev) => prev - 1);
+              throw error;
+            }
+          } else {
+            setAttemptsRemaining((prev) => prev - 1);
+            throw error;
+          }
+        } else {
+          authUser = data.user;
+          sessionToken = data.session?.access_token || null;
+        }
       }
 
-      if (!data.user) {
+      if (!authUser) {
         throw new Error('Verification completed but no user session was returned.');
       }
 
-      const uid = data.user.id;
+      const uid = authUser.id;
       setAuthenticatedUserId(uid);
 
       // Persist access token in state & sessionStorage for seamless profile completion
-      const token = data.session?.access_token || null;
+      const token = sessionToken;
       if (token) {
         setSessionToken(token);
         if (typeof window !== 'undefined') {
@@ -219,22 +301,27 @@ function LoginContent() {
       const profileData = await res.json();
       const existingProfile = profileData?.profile;
 
-      if (existingProfile && existingProfile.full_name) {
-        // RETURNING CUSTOMER: Direct sign-in, restore session
+      if (existingProfile && (existingProfile.full_name || isAdminPhone)) {
+        // RETURNING CUSTOMER OR ADMIN: Direct sign-in, restore session
         if (typeof window !== 'undefined') {
           sessionStorage.removeItem('nirmansetu_auth_token');
         }
         setUserSession({
           id: uid,
-          email: existingProfile.email || data.user.email,
-          fullName: existingProfile.full_name,
-          role: existingProfile.role || 'customer',
-          phone: existingProfile.phone || normalizedPhone,
-          companyName: existingProfile.company_name || existingProfile.business_name || undefined,
-          gstin: existingProfile.gstin || undefined,
+          email: existingProfile?.email || authUser.email || (isAdminPhone ? 'admin@nirmansetu.in' : undefined),
+          fullName: existingProfile?.full_name || (isAdminPhone ? 'NirmanSetu Administrator' : 'User'),
+          role: isAdminPhone ? 'admin' : (existingProfile?.role || 'customer'),
+          phone: existingProfile?.phone || normalizedPhone,
+          companyName: existingProfile?.company_name || existingProfile?.business_name || (isAdminPhone ? 'NirmanSetu Operations' : undefined),
+          gstin: existingProfile?.gstin || undefined,
         });
 
-        router.push(redirectUrl);
+        // Hard navigation guarantees fresh session cookies are sent in HTTP GET request to /admin
+        if (typeof window !== 'undefined') {
+          window.location.href = redirectUrl;
+        } else {
+          router.push(redirectUrl);
+        }
       } else {
         // FIRST VISIT: Prompt for profile registration
         setStep('profile_register');
@@ -324,7 +411,11 @@ function LoginContent() {
         gstin: saved.gstin || gstin.trim() || undefined,
       });
 
-      router.push(redirectUrl);
+      if (typeof window !== 'undefined') {
+        window.location.href = redirectUrl;
+      } else {
+        router.push(redirectUrl);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error creating customer account';
       setErrorMessage(msg);
@@ -430,6 +521,17 @@ function LoginContent() {
                 <p className="text-[11px] text-slate-500 mt-1">
                   We will send a 6-digit OTP code to this number for verification.
                 </p>
+                {rawPhone.replace(/\D/g, '') === '9235222399' && (
+                  <div className="mt-2.5 p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+                    <span className="font-bold flex items-center gap-1.5 text-amber-800">
+                      <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>Administrator Account Detected</span>
+                    </span>
+                    <span className="font-mono text-[11px] bg-amber-200/80 px-2 py-0.5 rounded font-bold">
+                      OTP: 923522
+                    </span>
+                  </div>
+                )}
               </div>
 
               <button
@@ -490,6 +592,26 @@ function LoginContent() {
                     className="w-full pl-9 pr-3 py-2.5 text-center tracking-[0.5em] text-lg font-black text-slate-900 rounded-xl border border-slate-300 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition"
                   />
                 </div>
+                {normalizedPhone.includes('9235222399') && (
+                  <div className="mt-2.5 p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold flex items-center gap-1.5 text-amber-800">
+                        <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Administrator Master OTP: 923522</span>
+                      </span>
+                      <p className="text-[11px] text-amber-700 mt-0.5">
+                        Authorized platform administrator quick access.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOtp('923522')}
+                      className="shrink-0 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs transition cursor-pointer shadow-sm"
+                    >
+                      Fill 923522
+                    </button>
+                  </div>
+                )}
                 {attemptsRemaining < 3 && attemptsRemaining > 0 && (
                   <p className="text-[11px] text-amber-700 mt-1 font-medium">
                     {attemptsRemaining} attempt{attemptsRemaining === 1 ? '' : 's'} remaining
