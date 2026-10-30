@@ -120,6 +120,7 @@ export default function AdminDashboardPage() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
   // Modal states for fulfillment actions
+  const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<any | null>(null);
   const [selectedOrderForPo, setSelectedOrderForPo] = useState<any | null>(null);
   const [poSupplierId, setPoSupplierId] = useState('f0000000-0000-0000-0000-000000000001');
 
@@ -930,36 +931,58 @@ export default function AdminDashboardPage() {
               </div>
 
               <div className="divide-y divide-slate-100 text-xs">
-                {orders.map((o) => (
-                  <div key={o.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-slate-900 flex items-center gap-2">
-                        <span>{o.order_number || o.id}</span>
-                        <span className="text-[11px] text-slate-500 font-normal">
-                          {o.customer_name} • PIN {o.shipping_pincode || o.pincode}
-                        </span>
+                {orders.length === 0 ? (
+                  <div className="py-6 text-center text-slate-400">No orders placed yet.</div>
+                ) : (
+                  orders.slice(0, 10).map((o) => {
+                    const itemsList = o.items || o.order_items || [];
+                    const itemsSummary = itemsList.map((i: any) => `${i.quantity}x ${i.product_title_snapshot}`).join(', ') || 'Building Materials';
+                    return (
+                      <div key={o.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/70 p-2 rounded-xl transition">
+                        <div>
+                          <div className="font-bold text-slate-900 flex items-center gap-2">
+                            <span className="font-mono text-slate-950">{o.order_number || o.id}</span>
+                            <span className="text-[11px] text-slate-600 font-medium">
+                              {o.customer_name || 'Site Customer'}
+                              {o.customer_phone ? ` (${o.customer_phone})` : ''} • PIN {o.shipping_pincode || o.pincode}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-amber-900/80 font-medium mt-0.5 max-w-lg truncate">
+                            {itemsSummary}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Status: {o.status_history?.slice(-1)[0]?.notes || 'Order placed and confirmed.'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-mono font-bold text-slate-900 text-xs">
+                            ₹{((o.total_amount_paise || o.total_paise || 0) / 100).toLocaleString('en-IN')}
+                          </span>
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
+                              o.status === 'delivered'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : o.status === 'dispatched'
+                                ? 'bg-blue-100 text-blue-800'
+                                : o.status === 'supplier_rejected'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {o.status}
+                          </span>
+                          <button
+                            onClick={() => setSelectedOrderForDetails(o)}
+                            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-[11px] inline-flex items-center gap-1 shadow-2xs"
+                          >
+                            <Eye className="w-3 h-3 text-amber-400" />
+                            View
+                          </button>
+                        </div>
                       </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
-                        Status History: {o.status_history?.slice(-1)[0]?.notes || 'Awaiting dispatch'}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                          o.status === 'delivered'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : o.status === 'dispatched'
-                            ? 'bg-blue-100 text-blue-800'
-                            : o.status === 'supplier_rejected'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        {o.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -987,6 +1010,7 @@ export default function AdminDashboardPage() {
                     <tr>
                       <th className="py-3 px-4 font-semibold">Order Ref</th>
                       <th className="py-3 px-4 font-semibold">Destination Site</th>
+                      <th className="py-3 px-4 font-semibold">Ordered Materials</th>
                       <th className="py-3 px-4 font-semibold">Fulfillment Stage</th>
                       <th className="py-3 px-4 font-semibold">Latest Operations Note</th>
                       <th className="py-3 px-4 font-semibold text-right">Actions</th>
@@ -1003,8 +1027,28 @@ export default function AdminDashboardPage() {
                         </td>
                         <td className="py-3 px-4">
                           <div className="font-semibold text-slate-800">{o.customer_name || 'Site Customer'}</div>
-                          <div className="text-[11px] text-slate-500">
-                            PIN {o.shipping_pincode || o.pincode}
+                          <div className="text-[11px] text-slate-500 font-mono">
+                            {o.customer_phone ? `+91 ${o.customer_phone}` : ''}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate max-w-[160px]">
+                            {o.shipping_address || `PIN ${o.shipping_pincode || o.pincode}`}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="space-y-0.5 max-w-xs">
+                            {(o.items || o.order_items || []).length === 0 ? (
+                              <span className="text-slate-400 text-[11px]">No items</span>
+                            ) : (
+                              (o.items || o.order_items || []).map((itm: any, idx: number) => (
+                                <div key={idx} className="text-[11px] text-slate-800 leading-tight">
+                                  <span className="font-bold text-amber-700">{itm.quantity}x</span>{' '}
+                                  <span className="font-medium text-slate-900">{itm.product_title_snapshot || 'Material'}</span>
+                                  {itm.variant_title_snapshot && (
+                                    <span className="text-slate-500 text-[10px]"> ({itm.variant_title_snapshot})</span>
+                                  )}
+                                </div>
+                              ))
+                            )}
                           </div>
                         </td>
                         <td className="py-3 px-4">
@@ -1028,7 +1072,15 @@ export default function AdminDashboardPage() {
                           {o.status_history?.slice(-1)[0]?.notes || 'Order confirmed, awaiting assignment.'}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            <button
+                              onClick={() => setSelectedOrderForDetails(o)}
+                              className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] inline-flex items-center gap-1 shadow-2xs"
+                              title="View Full Order Breakdown"
+                            >
+                              <Eye className="w-3 h-3 text-amber-400" /> Details
+                            </button>
+
                             {/* Step 1: Assign Supplier */}
                             {(!o.status || o.status === 'confirmed' || o.status === 'pending_payment') && (
                               <button
@@ -1313,6 +1365,165 @@ export default function AdminDashboardPage() {
                 </form>
               </div>
             )}
+
+            {/* Modal: Assign Stockist / Issue PO */}
+            {selectedOrderForPo && (
+              <div className="p-6 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm space-y-4 text-xs animate-in fade-in duration-150">
+                <div className="flex items-center justify-between border-b border-amber-200 pb-2">
+                  <h4 className="text-sm font-bold text-amber-950 flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-amber-700" />
+                    <span>Assign Verified Ayodhya Stockist for {selectedOrderForPo.order_number}</span>
+                  </h4>
+                  <button
+                    onClick={() => setSelectedOrderForPo(null)}
+                    className="text-amber-800 hover:text-amber-950 font-bold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="p-3 bg-white/80 rounded-xl border border-amber-100 flex flex-col sm:flex-row justify-between gap-2">
+                  <div>
+                    <span className="font-semibold text-slate-700">Customer:</span>{' '}
+                    <span className="font-bold text-slate-900">{selectedOrderForPo.customer_name || 'Site Customer'}</span>{' '}
+                    {selectedOrderForPo.customer_phone && <span className="text-slate-500 font-mono">({selectedOrderForPo.customer_phone})</span>}
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      {selectedOrderForPo.shipping_address || 'Jobsite Address'}, PIN {selectedOrderForPo.shipping_pincode || selectedOrderForPo.pincode}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-500 uppercase">Order Value</span>
+                    <div className="font-mono font-bold text-slate-900 text-sm">
+                      ₹{((selectedOrderForPo.total_amount_paise || selectedOrderForPo.total_paise || 0) / 100).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Materials preview in assign modal */}
+                <div className="p-3 bg-white/80 rounded-xl border border-amber-100">
+                  <span className="font-semibold text-slate-700 block mb-1">Materials to Fulfill:</span>
+                  <div className="space-y-1">
+                    {(selectedOrderForPo.items || selectedOrderForPo.order_items || []).map((itm: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between text-slate-800 text-[11px]">
+                        <span>
+                          <strong className="text-amber-800">{itm.quantity}x</strong> {itm.product_title_snapshot}{' '}
+                          {itm.variant_title_snapshot && <span className="text-slate-500">({itm.variant_title_snapshot})</span>}
+                        </span>
+                        <span className="font-mono text-slate-600">
+                          ₹{((itm.total_paise || itm.unit_price_paise * itm.quantity || 0) / 100).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <form onSubmit={handleIssuePo} className="space-y-4">
+                  <div>
+                    <label className="block font-semibold text-amber-950 mb-1">
+                      Select Approved Ayodhya Merchant / Stockist *
+                    </label>
+                    <select
+                      value={poSupplierId}
+                      onChange={(e) => setPoSupplierId(e.target.value)}
+                      className="w-full px-3 py-2 border border-amber-200 rounded-xl bg-white text-slate-900"
+                    >
+                      {suppliers
+                        .filter((s) => s.verification_status === 'verified')
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.business_name} ({s.pincode}) - Contact: {s.contact_person} ({s.phone})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedOrderForPo(null)}
+                      className="py-2.5 px-4 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={actionLoading}
+                      className="py-2.5 px-6 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition flex items-center gap-2 shadow-xs"
+                    >
+                      <Building2 className="w-4 h-4" />
+                      <span>Issue PO & Assign Stockist</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Modal: Report Failed Delivery */}
+            {selectedOrderForFailure && (
+              <div className="p-6 bg-orange-50 border border-orange-200 rounded-2xl shadow-sm space-y-4 text-xs animate-in fade-in duration-150">
+                <div className="flex items-center justify-between border-b border-orange-200 pb-2">
+                  <h4 className="text-sm font-bold text-orange-950 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-orange-700" />
+                    <span>Report Delivery Exception for {selectedOrderForFailure.order_number}</span>
+                  </h4>
+                  <button
+                    onClick={() => setSelectedOrderForFailure(null)}
+                    className="text-orange-700 hover:text-orange-950 font-bold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <form onSubmit={handleRecordFailure} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-semibold text-orange-950 mb-1">
+                        Reason for Delivery Exception / Failure *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={failureReason}
+                        onChange={(e) => setFailureReason(e.target.value)}
+                        className="w-full px-3 py-2 border border-orange-200 rounded-xl bg-white"
+                        placeholder="e.g. Site gate locked, customer phone unreachable"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-orange-950 mb-1">
+                        Next Delivery Retry Scheduled Time *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={retryScheduledAt}
+                        onChange={(e) => setRetryScheduledAt(e.target.value)}
+                        className="w-full px-3 py-2 border border-orange-200 rounded-xl bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedOrderForFailure(null)}
+                      className="py-2.5 px-4 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={actionLoading}
+                      className="py-2.5 px-6 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl transition flex items-center gap-2"
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Record Delivery Exception</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
           </div>
         )}
 
@@ -1568,30 +1779,107 @@ export default function AdminDashboardPage() {
               <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                   <tr>
-                    <th className="py-3 px-4 font-semibold">Order Ref</th>
-                    <th className="py-3 px-4 font-semibold">Customer & PIN</th>
-                    <th className="py-3 px-4 font-semibold">Total Amount</th>
+                    <th className="py-3 px-4 font-semibold">Order Ref & Date</th>
+                    <th className="py-3 px-4 font-semibold">Customer & Destination</th>
+                    <th className="py-3 px-4 font-semibold">Ordered Items & Quantities</th>
+                    <th className="py-3 px-4 font-semibold">Payment & Total</th>
                     <th className="py-3 px-4 font-semibold">Status</th>
+                    <th className="py-3 px-4 font-semibold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {orders.map((o) => (
-                    <tr key={o.id} className="hover:bg-slate-50/70">
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">{o.order_number || o.id}</td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold">{o.customer_name}</div>
-                        <div className="text-[11px] text-slate-400">PIN {o.shipping_pincode || o.pincode}</div>
-                      </td>
-                      <td className="py-3 px-4 font-bold text-slate-900">
-                        ₹{((o.total_amount_paise || o.total_paise || 0) / 100).toLocaleString('en-IN')}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700">
-                          {o.status}
-                        </span>
+                  {orders.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400">
+                        No orders recorded in database yet.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    orders.map((o) => {
+                      const itemsList = o.items || o.order_items || [];
+                      return (
+                        <tr key={o.id} className="hover:bg-slate-50/70 transition">
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                            <div>{o.order_number || o.id}</div>
+                            <div className="text-[10px] text-slate-400 font-normal">
+                              {o.created_at
+                                ? new Date(o.created_at).toLocaleString('en-IN', {
+                                    dateStyle: 'short',
+                                    timeStyle: 'short',
+                                  })
+                                : 'Just now'}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-slate-900">{o.customer_name || 'Site Customer'}</div>
+                            <div className="text-[11px] text-slate-600 font-mono">
+                              {o.customer_phone ? `+91 ${o.customer_phone}` : ''}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate max-w-[180px]">
+                              {o.shipping_address ? `${o.shipping_address}, PIN ${o.shipping_pincode || o.pincode}` : `PIN ${o.shipping_pincode || o.pincode}`}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            {itemsList.length === 0 ? (
+                              <span className="text-slate-400 text-[11px]">No line items</span>
+                            ) : (
+                              <div className="space-y-1 max-w-xs">
+                                {itemsList.map((itm: any, idx: number) => (
+                                  <div key={idx} className="text-[11px] text-slate-800 leading-tight">
+                                    <span className="font-bold text-amber-700">{itm.quantity}x</span>{' '}
+                                    <span className="font-medium text-slate-900">{itm.product_title_snapshot || 'Material'}</span>
+                                    {itm.variant_title_snapshot && (
+                                      <span className="text-slate-500 text-[10px]"> ({itm.variant_title_snapshot})</span>
+                                    )}
+                                    <span className="text-slate-400 text-[10px] ml-1 font-mono">
+                                      ₹{((itm.total_paise || itm.unit_price_paise * itm.quantity || 0) / 100).toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-slate-900 text-sm font-mono">
+                              ₹{((o.total_amount_paise || o.total_paise || 0) / 100).toLocaleString('en-IN')}
+                            </div>
+                            <div className="text-[10px] text-slate-500 uppercase font-semibold">
+                              {o.payment_method === 'cod' ? 'Cash on Delivery' : o.payment_method || 'Prepaid'}
+                            </div>
+                            <div className="text-[10px] text-slate-400 capitalize">
+                              {o.payment_status || 'Pending'}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
+                                o.status === 'delivered'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : o.status === 'dispatched'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : o.status === 'supplier_rejected'
+                                  ? 'bg-red-100 text-red-800'
+                                  : o.status === 'failed_delivery'
+                                  ? 'bg-orange-100 text-orange-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {o.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => setSelectedOrderForDetails(o)}
+                              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs inline-flex items-center gap-1.5 transition shadow-2xs whitespace-nowrap"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-amber-400" />
+                              View Details
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -2726,6 +3014,266 @@ export default function AdminDashboardPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: FULL ORDER DETAILS & AUDIT BREAKDOWN */}
+        {selectedOrderForDetails && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden text-xs">
+              {/* Modal Header */}
+              <div className="p-5 border-b border-slate-200 bg-slate-900 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+                    <Package className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-mono font-bold text-base text-white">
+                        {selectedOrderForDetails.order_number || selectedOrderForDetails.id}
+                      </h3>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          selectedOrderForDetails.status === 'delivered'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : selectedOrderForDetails.status === 'dispatched'
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            : selectedOrderForDetails.status === 'supplier_rejected'
+                            ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}
+                      >
+                        {selectedOrderForDetails.status}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Placed on {new Date(selectedOrderForDetails.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedOrderForDetails(null)}
+                  className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 transition"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto space-y-6">
+                {/* 3 Grid Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Card 1: Customer & Site */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-slate-500" /> Customer & Site
+                    </div>
+                    <div className="font-bold text-slate-900 text-sm">
+                      {selectedOrderForDetails.customer_name || 'Site Customer'}
+                    </div>
+                    {selectedOrderForDetails.customer_phone && (
+                      <a
+                        href={`tel:${selectedOrderForDetails.customer_phone}`}
+                        className="font-mono text-amber-600 hover:underline block font-semibold"
+                      >
+                        📞 +91 {selectedOrderForDetails.customer_phone}
+                      </a>
+                    )}
+                    <div className="text-slate-600 text-[11px] mt-1 leading-relaxed">
+                      {selectedOrderForDetails.shipping_address || 'Jobsite Address'}
+                      <div className="font-bold text-slate-700">
+                        PIN: {selectedOrderForDetails.shipping_pincode || selectedOrderForDetails.pincode || '224001'} (Ayodhya)
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Payment & Billing */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1.5">
+                      <DollarSign className="w-3.5 h-3.5 text-slate-500" /> Payment & Billing
+                    </div>
+                    <div className="font-mono font-bold text-slate-900 text-lg">
+                      ₹{((selectedOrderForDetails.total_amount_paise || selectedOrderForDetails.total_paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-[11px] font-semibold text-slate-700">
+                      Method: <span className="uppercase text-slate-900">{selectedOrderForDetails.payment_method === 'cod' ? 'Cash on Delivery' : selectedOrderForDetails.payment_method || 'Prepaid'}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Status: <span className="font-bold uppercase text-amber-700">{selectedOrderForDetails.payment_status || 'Pending'}</span>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Security & Verification */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-slate-500" /> Delivery Security
+                    </div>
+                    <div className="text-[11px] text-slate-600">
+                      Drop-off OTP:{' '}
+                      <span className="font-mono font-black text-slate-900 bg-amber-100 px-2 py-0.5 rounded">
+                        {selectedOrderForDetails.delivery_otp_plain || 'Secured'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">
+                      OTP dispatched via verified SMS to recipient mobile upon truck dispatch.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Line Items Table */}
+                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  <div className="bg-slate-100/70 px-4 py-2.5 font-bold text-slate-800 uppercase tracking-wider text-[11px] flex items-center justify-between">
+                    <span>Ordered Building Materials ({selectedOrderForDetails.items?.length || selectedOrderForDetails.order_items?.length || 0} line items)</span>
+                    <span className="text-slate-500 font-normal">Integer-paise verified</span>
+                  </div>
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 text-[10px] uppercase font-semibold">
+                      <tr>
+                        <th className="py-2.5 px-4">Item & Variant</th>
+                        <th className="py-2.5 px-3">HSN Code</th>
+                        <th className="py-2.5 px-3 text-center">Qty</th>
+                        <th className="py-2.5 px-3 text-right">Unit Price</th>
+                        <th className="py-2.5 px-3 text-right">GST Rate</th>
+                        <th className="py-2.5 px-4 text-right">Line Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {(selectedOrderForDetails.items || selectedOrderForDetails.order_items || []).map((itm: any, idx: number) => {
+                        const lineTotalPaise = itm.total_paise || (itm.unit_price_paise * itm.quantity);
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-900">{itm.product_title_snapshot || 'Material'}</div>
+                              {itm.variant_title_snapshot && (
+                                <div className="text-[11px] text-slate-500">{itm.variant_title_snapshot}</div>
+                              )}
+                              {itm.sku_snapshot && (
+                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">SKU: {itm.sku_snapshot}</div>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 font-mono text-slate-600 text-[11px]">
+                              {itm.hsn_code_snapshot || '252329'}
+                            </td>
+                            <td className="py-3 px-3 text-center font-bold text-slate-900">
+                              {itm.quantity} <span className="text-[10px] text-slate-500 font-normal">{itm.unit_snapshot || 'units'}</span>
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono text-slate-700">
+                              ₹{((itm.unit_price_paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono text-slate-600">
+                              {itm.gst_rate_pct || 18}%
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
+                              ₹{(lineTotalPaise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-slate-50/80 border-t border-slate-200 text-slate-700">
+                      <tr>
+                        <td colSpan={5} className="py-2 px-4 text-right font-semibold text-[11px]">Material Subtotal:</td>
+                        <td className="py-2 px-4 text-right font-mono font-bold text-slate-900">
+                          ₹{((selectedOrderForDetails.subtotal_paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colSpan={5} className="py-1 px-4 text-right font-semibold text-[11px]">Applicable GST Tax:</td>
+                        <td className="py-1 px-4 text-right font-mono text-slate-700">
+                          ₹{((selectedOrderForDetails.tax_paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colSpan={5} className="py-1 px-4 text-right font-semibold text-[11px]">Jobsite Delivery Logistics:</td>
+                        <td className="py-1 px-4 text-right font-mono text-slate-700">
+                          ₹{((selectedOrderForDetails.delivery_fee_paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                      <tr className="border-t border-slate-200 bg-amber-50/50">
+                        <td colSpan={5} className="py-2.5 px-4 text-right font-black text-slate-900 text-xs">Total Net Payable:</td>
+                        <td className="py-2.5 px-4 text-right font-mono font-black text-amber-800 text-sm">
+                          ₹{((selectedOrderForDetails.total_amount_paise || selectedOrderForDetails.total_paise || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Status History & Audit Log Timeline */}
+                <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-3">
+                  <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-slate-500" /> Status & Audit Trail Timeline
+                  </h4>
+                  <div className="space-y-2">
+                    {(selectedOrderForDetails.status_history || []).length === 0 ? (
+                      <p className="text-slate-400 text-[11px]">No status transition logs recorded.</p>
+                    ) : (
+                      (selectedOrderForDetails.status_history || []).map((sh: any, i: number) => (
+                        <div key={i} className="flex items-start gap-3 text-xs bg-white p-2.5 rounded-xl border border-slate-200/80">
+                          <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold uppercase tracking-wider text-slate-900 text-[10px]">
+                                {sh.new_status || sh.status || 'Updated'}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {sh.created_at ? new Date(sh.created_at).toLocaleString('en-IN') : ''}
+                              </span>
+                            </div>
+                            <p className="text-slate-600 text-[11px] mt-0.5">{sh.notes || 'Status changed'}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer with Direct Operational Actions */}
+              <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+                <button
+                  onClick={() => setSelectedOrderForDetails(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 font-bold text-slate-700 transition"
+                >
+                  Close
+                </button>
+                <div className="flex items-center gap-2">
+                  {(!selectedOrderForDetails.status || selectedOrderForDetails.status === 'confirmed') && (
+                    <button
+                      onClick={() => {
+                        setSelectedOrderForPo(selectedOrderForDetails);
+                        setSelectedOrderForDetails(null);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold flex items-center gap-1.5 transition shadow-xs"
+                    >
+                      <Building2 className="w-4 h-4" /> Assign Stockist Now
+                    </button>
+                  )}
+                  {(selectedOrderForDetails.status === 'supplier_confirmed' || selectedOrderForDetails.status === 'processing') && (
+                    <button
+                      onClick={() => {
+                        setSelectedOrderForDispatch(selectedOrderForDetails);
+                        setSelectedOrderForDetails(null);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 transition shadow-xs"
+                    >
+                      <Truck className="w-4 h-4" /> Dispatch Vehicle
+                    </button>
+                  )}
+                  {selectedOrderForDetails.status === 'dispatched' && (
+                    <button
+                      onClick={() => {
+                        setSelectedOrderForOtp(selectedOrderForDetails);
+                        setSelectedOrderForDetails(null);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 transition shadow-xs"
+                    >
+                      <KeyRound className="w-4 h-4" /> Verify Drop-off OTP
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}

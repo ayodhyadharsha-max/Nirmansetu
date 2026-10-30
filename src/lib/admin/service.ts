@@ -213,10 +213,22 @@ export async function listAllOrdersAdmin(filters?: { status?: string; pincode?: 
       }
 
       for (const dbo of dbOrders) {
+        const addr = dbo.delivery_address_snapshot || {};
+        const cust = addr.customerDetails || {};
+        const customerName = cust.name || addr.siteOrPersonName || 'Site Customer';
+        const customerPhone = cust.phone || addr.contactPhone || '';
+        const orderItems = itemsByOrder.get(dbo.id) || [];
+
         const fullOrder: StoredOrderRecord = {
           ...dbo,
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          shipping_address: addr.streetAddress || '',
+          shipping_pincode: dbo.pincode || addr.pincode || '',
+          total_amount_paise: dbo.total_paise,
           delivery_otp_plain: dbo.delivery_otp_plain || '****',
-          items: itemsByOrder.get(dbo.id) || [],
+          items: orderItems,
+          order_items: orderItems,
           status_history: historyByOrder.get(dbo.id) || [],
         };
         ordersMap.set(fullOrder.id, fullOrder);
@@ -233,7 +245,24 @@ export async function listAllOrdersAdmin(filters?: { status?: string; pincode?: 
     if (!ordersMap.has(o.id)) {
       if (filters?.status && o.status !== filters.status) continue;
       if (filters?.pincode && o.pincode !== filters.pincode) continue;
-      ordersMap.set(o.id, o);
+
+      const addr = o.delivery_address_snapshot || {};
+      const cust = addr.customerDetails || {};
+      const customerName = o.customer_name || cust.name || addr.siteOrPersonName || 'Site Customer';
+      const customerPhone = o.customer_phone || cust.phone || addr.contactPhone || '';
+      const orderItems = o.items || o.order_items || [];
+
+      const enrichedMemOrder: StoredOrderRecord = {
+        ...o,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        shipping_address: o.shipping_address || addr.streetAddress || '',
+        shipping_pincode: o.shipping_pincode || o.pincode || addr.pincode || '',
+        total_amount_paise: o.total_amount_paise || o.total_paise,
+        items: orderItems,
+        order_items: orderItems,
+      };
+      ordersMap.set(o.id, enrichedMemOrder);
     }
   }
 

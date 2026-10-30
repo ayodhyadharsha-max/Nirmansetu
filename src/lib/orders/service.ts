@@ -103,6 +103,29 @@ export interface StoredOrderRecord {
   delivered_at?: string | null;
   cancelled_at?: string | null;
   cancellation_reason?: string | null;
+  customer_name?: string;
+  customer_phone?: string;
+  shipping_address?: string;
+  shipping_pincode?: string;
+  total_amount_paise?: number;
+  order_items?: Array<{
+    id: string;
+    order_id: string;
+    variant_id: string;
+    supplier_id: string;
+    product_title_snapshot: string;
+    variant_title_snapshot: string;
+    sku_snapshot: string;
+    hsn_code_snapshot: string;
+    unit_snapshot: string;
+    quantity: number;
+    unit_price_paise: number;
+    gst_rate_pct: number;
+    tax_paise: number;
+    total_paise: number;
+    supplier_cost_paise: number;
+    platform_margin_paise: number;
+  }>;
 }
 
 // In-memory orders registry for offline testing, seeding and idempotency caching

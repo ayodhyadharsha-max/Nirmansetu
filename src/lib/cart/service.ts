@@ -268,7 +268,7 @@ export async function getTrustedVariantDetails(variantId: string): Promise<Omit<
       unit_price_paise: seedItem.selling_price_paise,
       mrp_paise: seedItem.mrp_paise,
       gst_rate_pct: Number(seedItem.tax_rate_pct || 18.0),
-      min_order_qty: seedItem.min_order_qty || 1,
+      min_order_qty: 1, // Permit retail on-demand orders from 1 unit
       max_order_qty: seedItem.max_order_qty || 1000,
       available_stock: seedItem.total_available_stock || 500,
       is_available: seedItem.is_in_stock ?? true,
@@ -324,7 +324,11 @@ export async function getTrustedVariantDetails(variantId: string): Promise<Omit<
       p.slug === cleanId ||
       p.slug === unPrefixed ||
       p.altSlugs?.includes(cleanId) ||
-      p.altSlugs?.includes(unPrefixed)
+      p.altSlugs?.includes(unPrefixed) ||
+      cleanId.startsWith(p.id) ||
+      unPrefixed.startsWith(p.id) ||
+      cleanId.startsWith(p.slug) ||
+      unPrefixed.startsWith(p.slug)
   );
 
   if (matchedProd) {
@@ -348,6 +352,36 @@ export async function getTrustedVariantDetails(variantId: string): Promise<Omit<
       is_available: true,
       image_url: matchedProd.imageUrl || '/images/placeholder-product.png',
     };
+  }
+
+  // 5. Fallback keyword matching in ALL_HOMERUN_PRODUCTS
+  const cleanTokens = unPrefixed.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 3);
+  if (cleanTokens.length > 0) {
+    const keywordMatch = ALL_HOMERUN_PRODUCTS.find((p) => {
+      const hay = `${p.title} ${p.slug} ${p.brand}`.toLowerCase();
+      return cleanTokens.some((t) => hay.includes(t));
+    });
+
+    if (keywordMatch) {
+      const catInfo = getCategorySeedAndTax(keywordMatch.title, keywordMatch.brand);
+      return {
+        variant_id: catInfo.variant_id,
+        product_id: catInfo.product_id,
+        product_title: keywordMatch.title,
+        variant_title: keywordMatch.options?.[0]?.title || keywordMatch.bulkPriceText || 'Standard Unit',
+        sku: `SKU-${keywordMatch.id.toUpperCase().replace(/[^A-Z0-9]/g, '-')}`,
+        unit_of_measure: catInfo.default_unit,
+        hsn_code: catInfo.hsn_code,
+        unit_price_paise: keywordMatch.price * 100,
+        mrp_paise: keywordMatch.mrp * 100,
+        gst_rate_pct: catInfo.tax_rate_pct,
+        min_order_qty: 1,
+        max_order_qty: 500,
+        available_stock: 500,
+        is_available: true,
+        image_url: keywordMatch.imageUrl || '/images/placeholder-product.png',
+      };
+    }
   }
 
   // Not found in any trusted source
@@ -495,9 +529,10 @@ export async function getCart(
       checkoutErrors.push(`${variant.product_title}: Requested quantity (${raw.quantity}) exceeds available stock (${variant.available_stock}).`);
     }
 
-    if (raw.quantity < variant.min_order_qty) {
-      warnings.push(`Minimum order quantity for this commercial item is ${variant.min_order_qty} ${variant.unit_of_measure}.`);
-      checkoutErrors.push(`${variant.product_title}: Minimum order quantity is ${variant.min_order_qty}.`);
+    if (raw.quantity <= 0) {
+      checkoutErrors.push(`${variant.product_title}: Quantity must be greater than zero.`);
+    } else if (raw.quantity < (variant.min_order_qty || 1)) {
+      warnings.push(`Commercial bulk pack recommended: ${variant.min_order_qty} ${variant.unit_of_measure}.`);
     }
 
     const totalLinePaise = variant.unit_price_paise * raw.quantity;
