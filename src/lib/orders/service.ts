@@ -136,6 +136,12 @@ export const idempotencyRegistry = new Map<string, string>(); // idempotency_key
  * Validates PIN code against Ayodhya serviceability zones.
  */
 export async function validatePincodeServiceability(pincode: string): Promise<{ isServiceable: boolean; hubName?: string }> {
+  // Check fast in-memory regional hubs first
+  const hub = AYODHYA_REGIONAL_HUBS.find((h) => h.pincode === pincode);
+  if (hub) {
+    return { isServiceable: true, hubName: hub.name };
+  }
+
   try {
     const supabase = createServerSupabaseClient();
     const { data } = await supabase
@@ -151,20 +157,20 @@ export async function validatePincodeServiceability(pincode: string): Promise<{ 
     // DB check handled
   }
 
-  const hub = AYODHYA_REGIONAL_HUBS.find((h) => h.pincode === pincode);
-  if (hub) {
-    return { isServiceable: true, hubName: hub.name };
-  }
-
   return { isServiceable: false };
 }
 
 export const GUEST_SYSTEM_PROFILE_ID = '00000000-0000-0000-0000-000000000002';
+let isGuestProfileVerified = false;
 
 /**
  * Returns a stable singleton profile ID for guest checkouts without creating new auth profiles on every order.
  */
 async function ensureGuestProfile(adminSupabase: any): Promise<string> {
+  if (isGuestProfileVerified) {
+    return GUEST_SYSTEM_PROFILE_ID;
+  }
+
   const { data: existing } = await adminSupabase
     .from('profiles')
     .select('id')
@@ -172,6 +178,7 @@ async function ensureGuestProfile(adminSupabase: any): Promise<string> {
     .maybeSingle();
 
   if (existing?.id) {
+    isGuestProfileVerified = true;
     return existing.id;
   }
 
@@ -205,6 +212,7 @@ async function ensureGuestProfile(adminSupabase: any): Promise<string> {
     { onConflict: 'id' }
   );
 
+  isGuestProfileVerified = true;
   return GUEST_SYSTEM_PROFILE_ID;
 }
 
@@ -297,45 +305,8 @@ export async function createOrder(params: CreateOrderParams): Promise<{
 
     if (params.userId) {
       // Verified authenticated user from session token
-      const { data: verifiedProfile } = await adminSupabase
-        .from('profiles')
-        .select('id')
-        .eq('id', params.userId)
-        .maybeSingle();
-
-      if (verifiedProfile?.id) {
-        finalUserId = verifiedProfile.id;
-      } else {
-        // User is authenticated in auth.users but profile row not yet created
-        const { data: authUserData } = await adminSupabase.auth.admin.getUserById(params.userId);
-        if (authUserData?.user) {
-          const { data: createdProfile } = await adminSupabase
-            .from('profiles')
-            .upsert(
-              {
-                id: params.userId,
-                full_name: params.customerDetails.name,
-                phone: phoneE164,
-                email: authUserData.user.email || params.customerDetails.email || null,
-                business_name: params.customerDetails.companyName || null,
-                gstin: params.customerDetails.gstin || null,
-                role: 'customer',
-                is_phone_verified: true,
-                is_active: true,
-              },
-              { onConflict: 'id' }
-            )
-            .select('id')
-            .maybeSingle();
-
-          if (createdProfile?.id) {
-            finalUserId = createdProfile.id;
-          }
-        }
-      }
-    }
-
-    if (!finalUserId) {
+      finalUserId = params.userId;
+    } else {
       // Guest Checkout: Use stable singleton Guest Customer Profile.
       // Do NOT create a new profile on every order or link an order to an account merely because a phone number matches.
       finalUserId = await ensureGuestProfile(adminSupabase);
@@ -445,48 +416,8 @@ export async function createOrder(params: CreateOrderParams): Promise<{
   try {
     const supabase = createAdminClient();
 
-    // 1. Attempt PostgreSQL transaction RPC first
-    let rpcExecuted = false;
-    try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc('create_order_transaction', {
-        p_order: {
-          id: orderId,
-          order_number: orderNumber,
-          user_id: finalUserId,
-          status: initialStatus,
-          payment_status: initialPaymentStatus,
-          payment_method: params.paymentMethod,
-          delivery_address_snapshot: addressSnapshot,
-          pincode: params.deliveryAddress.pincode,
-          subtotal_paise: cart.summary.subtotalPaise,
-          tax_paise: cart.summary.taxPaise,
-          delivery_fee_paise: cart.summary.deliveryFeePaise,
-          discount_paise: cart.summary.discountPaise,
-          total_paise: cart.summary.totalPaise,
-          coupon_id: cart.coupon?.id || null,
-          delivery_otp_hash: deliveryOtpHash,
-          customer_notes: params.customerNotes || null,
-          internal_notes: `[idempotency_key:${params.idempotencyKey || ''}] Initial web placement`,
-        },
-        p_items: orderItems,
-        p_history: {
-          id: statusHistoryEntry.id,
-          new_status: initialStatus,
-          changed_by: finalUserId || null,
-          notes: statusHistoryEntry.notes,
-        },
-      });
-
-      if (!rpcError && rpcData?.success) {
-        rpcExecuted = true;
-      }
-    } catch {
-      // RPC not defined or failed; fall back to multi-step insert with strict compensating rollback
-    }
-
-    if (!rpcExecuted) {
-      // 2. Multi-step insert with STRICT COMPENSATING ROLLBACK on any failure
-      const { error: orderError } = await supabase.from('orders').insert({
+    // Multi-step insert with STRICT COMPENSATING ROLLBACK on any failure
+    const { error: orderError } = await supabase.from('orders').insert({
         id: orderId,
         order_number: orderNumber,
         user_id: finalUserId,
@@ -553,7 +484,6 @@ export async function createOrder(params: CreateOrderParams): Promise<{
           error: `Database transaction failed: could not record status history. Order was rolled back cleanly. (${histError.message})`,
         };
       }
-    }
   } catch (dbErr: any) {
     console.error('[createOrder] Database synchronization exception:', dbErr);
     memoryOrders.delete(orderId);

@@ -148,22 +148,50 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
       };
 
       const authHeaders = await getBrowserAuthHeaders();
-      const res = await fetch('/api/orders/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders,
-        },
-        body: JSON.stringify({
-          ...payload,
-          userId: user?.id,
-        }),
+      const requestBody = JSON.stringify({
+        ...payload,
+        userId: user?.id,
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to place order');
-      }
+      // Robust fetch with automatic single retry on network hiccups
+      const executeOrderPlacement = async (isRetry = false): Promise<any> => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        try {
+          const res = await fetch('/api/orders/create', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...authHeaders,
+            },
+            body: requestBody,
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+
+          let data: any;
+          try {
+            data = await res.json();
+          } catch {
+            throw new Error(`Server returned status ${res.status}. Please try again.`);
+          }
+
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Failed to place order');
+          }
+          return data;
+        } catch (fetchErr: any) {
+          clearTimeout(timeoutId);
+          if (!isRetry && (fetchErr.name === 'AbortError' || fetchErr.message === 'Load failed' || fetchErr.message?.includes('fetch'))) {
+            // Automatic single retry after 800ms
+            await new Promise((r) => setTimeout(r, 800));
+            return executeOrderPlacement(true);
+          }
+          throw fetchErr;
+        }
+      };
+
+      const data = await executeOrderPlacement();
 
       setOrderReceipt({
         orderNumber: data.orderNumber || data.summary?.orderNumber,
@@ -174,7 +202,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = (props) => {
       });
       onClearCart();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Network failure';
+      let message = err instanceof Error ? err.message : 'Network failure';
+      if (message === 'Load failed' || message.includes('Failed to fetch') || message.includes('aborted')) {
+        message = 'Site connection timed out. Please check your connection and tap "Confirm Site Order" again.';
+      }
       setFormError(message);
     } finally {
       setIsSubmitting(false);

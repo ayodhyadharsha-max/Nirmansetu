@@ -5,6 +5,9 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getAuthenticatedServerSession } from '@/lib/auth/roles';
 import { RAZORPAY_CONFIG } from '@/lib/payments/razorpay';
 
+export const maxDuration = 30;
+export const dynamic = 'force-dynamic';
+
 function normalizeIndianPhone(input: unknown): string {
   if (typeof input !== 'string') return '';
   let cleaned = input.trim().replace(/[\s\-\(\)]/g, '');
@@ -138,23 +141,7 @@ export async function POST(request: Request) {
       const session = await getAuthenticatedServerSession(request);
       if (session) {
         userId = session.id;
-        const { createAdminClient } = await import('@/lib/supabase/admin');
-        const adminSupabase = createAdminClient();
-        const { data: profile } = await adminSupabase
-          .from('profiles')
-          .select('is_phone_verified, phone')
-          .eq('id', userId)
-          .maybeSingle();
-
-        if (profile?.is_phone_verified) {
-          isPhoneVerified = true;
-        } else {
-          // Check auth user phone confirmed status
-          const { data: authUserData } = await adminSupabase.auth.admin.getUserById(userId);
-          if (authUserData?.user?.phone_confirmed_at) {
-            isPhoneVerified = true;
-          }
-        }
+        isPhoneVerified = session.isPhoneVerified ?? false;
       }
     } catch {
       // Optional guest checkout

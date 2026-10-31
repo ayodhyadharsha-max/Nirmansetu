@@ -21,6 +21,8 @@ import { UserRole } from '@/types/database';
 export interface AuthenticatedUserSession {
   id: string;
   email?: string;
+  phone?: string;
+  isPhoneVerified?: boolean;
   role: UserRole;
   isActive: boolean;
   fullName: string;
@@ -177,9 +179,14 @@ export async function getAuthenticatedServerSession(request?: Request): Promise<
       }
     }
 
+    const isPhoneVerified = !!(profile?.is_phone_verified || (user as any).phone_confirmed_at);
+    const resolvedPhone = profile?.phone || user.phone || (user.user_metadata as any)?.phone;
+
     return {
       id: user.id,
       email: user.email,
+      phone: resolvedPhone || undefined,
+      isPhoneVerified,
       role,
       isActive,
       fullName: profile?.full_name || user.email?.split('@')[0] || 'User',

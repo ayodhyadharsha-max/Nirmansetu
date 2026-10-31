@@ -392,6 +392,12 @@ export async function getTrustedVariantDetails(variantId: string): Promise<Omit<
  * Calculates delivery fee for a specific PIN code in integer paise.
  */
 export async function calculateDeliveryFeeForPincode(pincode: string, isExpress = false): Promise<number> {
+  const hub = AYODHYA_REGIONAL_HUBS.find((h) => h.pincode === pincode);
+  if (hub) {
+    if (isExpress && hub.isExpress) return 39900;
+    return 19900;
+  }
+
   try {
     const supabase = createServerSupabaseClient();
     const { data } = await supabase
@@ -407,13 +413,7 @@ export async function calculateDeliveryFeeForPincode(pincode: string, isExpress 
       return data.standard_delivery_fee_paise;
     }
   } catch {
-    // Fallback to regional hubs config
-  }
-
-  const hub = AYODHYA_REGIONAL_HUBS.find((h) => h.pincode === pincode);
-  if (hub) {
-    if (isExpress && hub.isExpress) return 39900;
-    return 19900;
+    // Fallback
   }
 
   return 19900;
@@ -430,30 +430,32 @@ export async function getCart(
   const targetPincode = pincode || BRAND_CONFIG.defaultPincode;
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cartIdentifier);
 
-  // 1. Try DB lookup
+  // 1. Try DB lookup ONLY if overrideItems is not provided
   let dbCart: any = null;
   let dbItems: any[] = [];
 
-  try {
-    const supabase = createServerSupabaseClient();
-    let query = supabase.from('carts').select('*');
-    if (isUuid) {
-      query = query.eq('id', cartIdentifier);
-    } else {
-      query = query.eq('session_token', cartIdentifier);
-    }
-    const { data } = await query.maybeSingle();
-    dbCart = data;
+  if (!overrideItems || overrideItems.length === 0) {
+    try {
+      const supabase = createServerSupabaseClient();
+      let query = supabase.from('carts').select('*');
+      if (isUuid) {
+        query = query.eq('id', cartIdentifier);
+      } else {
+        query = query.eq('session_token', cartIdentifier);
+      }
+      const { data } = await query.maybeSingle();
+      dbCart = data;
 
-    if (dbCart) {
-      const { data: items } = await supabase
-        .from('cart_items')
-        .select('*')
-        .eq('cart_id', dbCart.id);
-      dbItems = items || [];
+      if (dbCart) {
+        const { data: items } = await supabase
+          .from('cart_items')
+          .select('*')
+          .eq('cart_id', dbCart.id);
+        dbItems = items || [];
+      }
+    } catch {
+      // DB offline
     }
-  } catch {
-    // DB offline
   }
 
   // Fallback to memory cart if DB didn't find it
