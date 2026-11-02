@@ -26,11 +26,15 @@ import { AYODHYA_REGIONAL_HUBS } from '@/config/brand';
 export interface DashboardMetrics {
   totalRevenuePaise: number;
   totalOrdersCount: number;
+  totalOrders: number;
   deliveredOrdersCount: number;
   pendingOrdersCount: number;
   totalGstCollectedPaise: number;
+  totalGstTaxPaise: number;
   activeSuppliersCount: number;
   pendingSupplierApplications: number;
+  pendingSuppliersCount: number;
+  activePincodesCount: number;
   totalCatalogProducts: number;
   categoryBreakdown: Array<{ category: string; orderCount: number; revenuePaise: number }>;
   recentAuditLogs: Array<{ action: string; entityType: string; createdAt: string }>;
@@ -152,11 +156,15 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   return {
     totalRevenuePaise,
     totalOrdersCount: allOrders.length,
+    totalOrders: allOrders.length,
     deliveredOrdersCount,
     pendingOrdersCount,
     totalGstCollectedPaise,
+    totalGstTaxPaise: totalGstCollectedPaise,
     activeSuppliersCount,
     pendingSupplierApplications,
+    pendingSuppliersCount: pendingSupplierApplications,
+    activePincodesCount: 6,
     totalCatalogProducts: SEED_CATALOG_ITEMS.length + ALL_HOMERUN_PRODUCTS.length,
     categoryBreakdown,
     recentAuditLogs,

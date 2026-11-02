@@ -335,11 +335,23 @@ export async function getTrustedVariantDetails(variantId: string): Promise<Omit<
     const catInfo = getCategorySeedAndTax(matchedProd.title, matchedProd.brand);
     const unit = matchedProd.title.toLowerCase().includes('wire') ? '90m coil' : catInfo.default_unit;
 
+    let variantTitle = matchedProd.options?.[0]?.title || '';
+    if (!variantTitle || variantTitle.toLowerCase().includes('unlock') || variantTitle.toLowerCase().includes('rate') || variantTitle.toLowerCase().includes('cashback')) {
+      const titleLower = matchedProd.title.toLowerCase();
+      if (titleLower.includes('cement')) variantTitle = '50 Kg Bag';
+      else if (titleLower.includes('tmt') || titleLower.includes('steel') || titleLower.includes('rebar')) variantTitle = 'Standard Rod (12m)';
+      else if (titleLower.includes('wire') || titleLower.includes('cable')) variantTitle = '90m Coil';
+      else if (titleLower.includes('pipe') || titleLower.includes('cpvc')) variantTitle = 'Standard Length (3m/5m)';
+      else if (titleLower.includes('paint') || titleLower.includes('emulsion') || titleLower.includes('primer')) variantTitle = '20 Litre Sealed Drum';
+      else if (titleLower.includes('tile')) variantTitle = 'Box of 4 Tiles';
+      else variantTitle = 'Standard Commercial Pack';
+    }
+
     return {
       variant_id: catInfo.variant_id,
       product_id: catInfo.product_id,
       product_title: matchedProd.title,
-      variant_title: matchedProd.options?.[0]?.title || matchedProd.bulkPriceText || 'Standard Unit',
+      variant_title: variantTitle,
       sku: `SKU-${matchedProd.id.toUpperCase().replace(/[^A-Z0-9]/g, '-')}`,
       unit_of_measure: unit,
       hsn_code: catInfo.hsn_code,

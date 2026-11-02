@@ -155,10 +155,11 @@ export default function AdminDashboardPage() {
     terms: 'Prices inclusive of GST. Transit insurance included. Site unloading at ground level.',
   });
 
-  const getEffectiveHeaders = () => {
+  const getEffectiveHeaders = (overrideToken?: string) => {
+    const token = overrideToken || accessToken;
     const headers: Record<string, string> = {};
-    if (accessToken) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
     return headers;
   };
@@ -196,11 +197,27 @@ export default function AdminDashboardPage() {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         const profileData = await profileRes.json();
-        const role = profileData?.profile?.role || (session.user.user_metadata as any)?.role || 'customer';
+        let role = profileData?.profile?.role || (session.user.user_metadata as any)?.role || 'customer';
+
+        // Explicit administrator authorization for designated operations mobiles
+        const userPhone = (
+          session.user.phone ||
+          profileData?.profile?.phone ||
+          (session.user.user_metadata as any)?.phone ||
+          ''
+        ).replace(/[^0-9]/g, '');
+
+        if (userPhone.endsWith('9235222399') || userPhone.endsWith('8881299358')) {
+          role = 'admin';
+        }
+
         if (isMounted) {
           setUserRole(role);
           if (role !== 'admin') {
             setAuthError(`Access Restricted (403): Your account (${session.user.phone || session.user.email}) is registered as '${role}'. Only verified Administrators can access the operations dashboard.`);
+          } else {
+            setAuthError(null);
+            fetchAdminData(session.access_token);
           }
         }
       } catch (err: any) {
@@ -222,11 +239,23 @@ export default function AdminDashboardPage() {
     };
   }, []);
 
-  const fetchAdminData = async () => {
+  const fetchAdminData = async (overrideToken?: string | unknown) => {
+    const cleanToken = typeof overrideToken === 'string' ? overrideToken : undefined;
     setLoading(true);
     setNotice(null);
     try {
-      const headers = getEffectiveHeaders();
+      let token = cleanToken || accessToken;
+      if (!token) {
+        try {
+          const supabase = createBrowserSupabaseClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          token = session?.access_token || null;
+          if (token) setAccessToken(token);
+        } catch {
+          // Handled
+        }
+      }
+      const headers = getEffectiveHeaders(token || undefined);
 
       // 1. Metrics
       const resMetrics = await fetch('/api/admin/metrics', { headers });

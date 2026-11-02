@@ -14,6 +14,7 @@ import {
   Zap,
   Wallet,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 import { BRAND_CONFIG, AYODHYA_REGIONAL_HUBS } from '@/config/brand';
 import { formatPaiseToRupees } from '@/lib/money';
@@ -239,6 +240,18 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
                 <span>Wallet</span>
               </button>
+
+              {/* Admin Button for platform administrators */}
+              {user?.role === 'admin' && (
+                <Link
+                  href="/admin"
+                  className="bg-purple-900 hover:bg-purple-950 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 text-xs font-bold shadow-xs transition"
+                  title="Platform Operations & Admin Dashboard"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Admin</span>
+                </Link>
+              )}
 
               {/* Login Button */}
               <Link

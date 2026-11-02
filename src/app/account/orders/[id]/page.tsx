@@ -263,7 +263,7 @@ export default function OrderDetailPage() {
                 </h2>
 
                 <div className="divide-y divide-slate-100">
-                  {order.items.map((item) => (
+                  {(order.items || order.order_items || []).map((item) => (
                     <div key={item.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                       <div>
                         <h3 className="font-bold text-slate-900 text-sm">{item.product_title_snapshot}</h3>

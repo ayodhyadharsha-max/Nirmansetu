@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Search, ChevronRight, Filter, AlertCircle, ArrowLeft } from 'lucide-react';
 import { listProducts, getCategories, getBrands } from '@/lib/catalog/service';
-import { searchCatalogProducts } from '@/config/homerun-catalog';
+import { searchCatalogProducts, ALL_HOMERUN_PRODUCTS } from '@/config/homerun-catalog';
 import { PublicCatalogItem } from '@/types/database';
 import { ProductCard } from '@/components/ProductCard';
 import { Header } from '@/components/Header';
@@ -50,8 +50,27 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   let displayItems = [...result.items];
   let totalCount = result.totalCount;
 
-  if (displayItems.length === 0 && query) {
-    const catalogMatches = searchCatalogProducts(query);
+  if (displayItems.length === 0 && (query || searchParams.brand || searchParams.category)) {
+    const brandTerm = (searchParams.brand || '').toLowerCase().replace(/[-_]/g, ' ');
+    const categoryTerm = (searchParams.category || '').toLowerCase().replace(/[-_]/g, ' ');
+    const searchTerm = query.toLowerCase();
+
+    let catalogMatches = query ? searchCatalogProducts(query) : [];
+
+    if (catalogMatches.length === 0 && (brandTerm || categoryTerm || searchTerm)) {
+      catalogMatches = ALL_HOMERUN_PRODUCTS.filter((p) => {
+        const titleLower = p.title.toLowerCase();
+        const brandLower = p.brand.toLowerCase();
+        const slugLower = p.slug.toLowerCase();
+
+        const matchBrand = !brandTerm || brandLower.includes(brandTerm) || brandTerm.includes(brandLower) || titleLower.includes(brandTerm);
+        const matchCategory = !categoryTerm || slugLower.includes(categoryTerm) || titleLower.includes(categoryTerm);
+        const matchQuery = !searchTerm || titleLower.includes(searchTerm) || brandLower.includes(searchTerm) || slugLower.includes(searchTerm);
+
+        return matchBrand && matchCategory && matchQuery;
+      });
+    }
+
     if (catalogMatches.length > 0) {
       displayItems = catalogMatches.map((item) => ({
         product_id: item.id,

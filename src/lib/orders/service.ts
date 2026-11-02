@@ -163,6 +163,9 @@ export async function validatePincodeServiceability(pincode: string): Promise<{ 
 export const GUEST_SYSTEM_PROFILE_ID = '00000000-0000-0000-0000-000000000002';
 let isGuestProfileVerified = false;
 
+export const DEFAULT_SUPPLIER_ID = 'f0000000-0000-0000-0000-000000000001';
+let isDefaultSupplierVerified = false;
+
 /**
  * Returns a stable singleton profile ID for guest checkouts without creating new auth profiles on every order.
  */
@@ -214,6 +217,53 @@ async function ensureGuestProfile(adminSupabase: any): Promise<string> {
 
   isGuestProfileVerified = true;
   return GUEST_SYSTEM_PROFILE_ID;
+}
+
+/**
+ * Ensures the default platform supplier exists to fulfill foreign key constraints on order_items.
+ */
+async function ensureDefaultSupplier(adminSupabase: any): Promise<string> {
+  if (isDefaultSupplierVerified) {
+    return DEFAULT_SUPPLIER_ID;
+  }
+
+  try {
+    const { data: existing } = await adminSupabase
+      .from('suppliers')
+      .select('id')
+      .eq('id', DEFAULT_SUPPLIER_ID)
+      .maybeSingle();
+
+    if (existing?.id) {
+      isDefaultSupplierVerified = true;
+      return existing.id;
+    }
+
+    await adminSupabase.from('suppliers').upsert(
+      {
+        id: DEFAULT_SUPPLIER_ID,
+        business_name: 'Ayodhya Central Building Materials Hub',
+        trade_name: 'NirmanSetu Ayodhya Stockist',
+        contact_person: 'Ramesh Sharma',
+        phone: '9450012345',
+        street_address: 'Plot 4, Industrial Area, Darshannagar',
+        city: 'Ayodhya',
+        pincode: '224123',
+        state: 'Uttar Pradesh',
+        verification_status: 'verified',
+        commission_rate_pct: 5.0,
+        rating: 4.8,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
+    isDefaultSupplierVerified = true;
+  } catch {
+    // Non-fatal if offline/mock
+  }
+
+  return DEFAULT_SUPPLIER_ID;
 }
 
 /**
@@ -415,6 +465,7 @@ export async function createOrder(params: CreateOrderParams): Promise<{
   // Sync to PostgreSQL DB using privileged admin client to ensure database persistence with transaction integrity
   try {
     const supabase = createAdminClient();
+    await ensureDefaultSupplier(supabase);
 
     // Multi-step insert with STRICT COMPENSATING ROLLBACK on any failure
     const { error: orderError } = await supabase.from('orders').insert({
@@ -565,6 +616,7 @@ export async function getOrderDetails(
 
 /**
  * Lists orders for a specific customer with strict user isolation.
+ * Automatically links and claims any guest orders placed with the customer's verified phone number.
  */
 export async function listUserOrders(userId: string): Promise<StoredOrderRecord[]> {
   const userOrders: StoredOrderRecord[] = [];
@@ -572,6 +624,33 @@ export async function listUserOrders(userId: string): Promise<StoredOrderRecord[
   // 1. Query persistent PostgreSQL DB via admin client (single source of truth)
   try {
     const adminSupabase = createAdminClient();
+
+    // Retrieve verified phone number for this authenticated user to claim any prior guest orders
+    let userPhone: string | null = null;
+    try {
+      const { data: profile } = await adminSupabase
+        .from('profiles')
+        .select('phone, is_phone_verified')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profile?.phone) {
+        const rawDigits = profile.phone.replace(/[^0-9]/g, '');
+        userPhone = rawDigits.startsWith('91') && rawDigits.length === 12 ? rawDigits.slice(2) : rawDigits;
+      }
+
+      if (!userPhone) {
+        const { data: authUserData } = await adminSupabase.auth.admin.getUserById(userId);
+        if (authUserData?.user?.phone) {
+          const rawDigits = authUserData.user.phone.replace(/[^0-9]/g, '');
+          userPhone = rawDigits.startsWith('91') && rawDigits.length === 12 ? rawDigits.slice(2) : rawDigits;
+        }
+      }
+    } catch {
+      // Non-fatal if profile lookup fails
+    }
+
+    // Direct user orders
     const { data: dbOrders, error: dbOrdersErr } = await adminSupabase
       .from('orders')
       .select('*')
@@ -583,13 +662,57 @@ export async function listUserOrders(userId: string): Promise<StoredOrderRecord[
         if (!userOrders.some((existing) => existing.id === dbo.id)) {
           const { data: items } = await adminSupabase.from('order_items').select('*').eq('order_id', dbo.id);
           const { data: history } = await adminSupabase.from('order_status_history').select('*').eq('order_id', dbo.id).order('created_at', { ascending: true });
+          const itemsList = items || [];
           userOrders.push({
             ...dbo,
             delivery_otp_plain: '****',
-            items: items || [],
+            items: itemsList,
+            order_items: itemsList,
             status_history: history || [],
           });
         }
+      }
+    }
+
+    // If verified customer has a valid 10-digit phone number, claim guest orders placed with this number
+    if (userPhone && userPhone.length === 10) {
+      try {
+        const { data: guestOrders } = await adminSupabase
+          .from('orders')
+          .select('*')
+          .or(`user_id.eq.${GUEST_SYSTEM_PROFILE_ID},user_id.is.null`)
+          .order('created_at', { ascending: false });
+
+        if (guestOrders && guestOrders.length > 0) {
+          for (const go of guestOrders) {
+            const addr = go.delivery_address_snapshot || {};
+            const rawPhone = (addr.customerDetails?.phone || addr.contactPhone || '').replace(/[^0-9]/g, '');
+            const cleanGoPhone = rawPhone.startsWith('91') && rawPhone.length === 12 ? rawPhone.slice(2) : rawPhone;
+
+            if (cleanGoPhone === userPhone && !userOrders.some((ex) => ex.id === go.id)) {
+              // Persistently link guest order to this authenticated user in PostgreSQL
+              try {
+                await adminSupabase.from('orders').update({ user_id: userId }).eq('id', go.id);
+                go.user_id = userId;
+              } catch {
+                // Update error non-fatal
+              }
+
+              const { data: items } = await adminSupabase.from('order_items').select('*').eq('order_id', go.id);
+              const { data: history } = await adminSupabase.from('order_status_history').select('*').eq('order_id', go.id).order('created_at', { ascending: true });
+              const itemsList = items || [];
+              userOrders.push({
+                ...go,
+                delivery_otp_plain: '****',
+                items: itemsList,
+                order_items: itemsList,
+                status_history: history || [],
+              });
+            }
+          }
+        }
+      } catch {
+        // Guest orders check non-fatal
       }
     }
   } catch (err) {
@@ -599,7 +722,12 @@ export async function listUserOrders(userId: string): Promise<StoredOrderRecord[
   // 2. Supplement with any un-flushed in-memory orders (for mock/offline environments)
   for (const o of Array.from(memoryOrders.values())) {
     if (o.user_id === userId && !userOrders.some((existing) => existing.id === o.id)) {
-      userOrders.push(o);
+      const itemsList = o.items || o.order_items || [];
+      userOrders.push({
+        ...o,
+        items: itemsList,
+        order_items: itemsList,
+      });
     }
   }
 

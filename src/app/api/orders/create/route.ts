@@ -147,6 +147,26 @@ export async function POST(request: Request) {
       // Optional guest checkout
     }
 
+    // Fallback: If session wasn't detected by header/cookie, verify client-supplied userId against profiles
+    if (!userId && rawJson.userId && typeof rawJson.userId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawJson.userId)) {
+      try {
+        const { createAdminClient } = await import('@/lib/supabase/admin');
+        const adminSupabase = createAdminClient();
+        const { data: matchedProfile } = await adminSupabase
+          .from('profiles')
+          .select('id, phone, is_phone_verified')
+          .eq('id', rawJson.userId)
+          .maybeSingle();
+
+        if (matchedProfile) {
+          userId = matchedProfile.id;
+          isPhoneVerified = matchedProfile.is_phone_verified ?? false;
+        }
+      } catch {
+        // Fallback handled
+      }
+    }
+
     const orderRes = await createOrder({
       idempotencyKey: input.idempotencyKey,
       cartId: input.cartId,

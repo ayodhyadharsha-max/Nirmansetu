@@ -129,16 +129,27 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
                 <div>
                   <div className="text-xs font-bold text-slate-900 truncate">{user.fullName}</div>
                   <div className="text-[10px] text-slate-500 uppercase tracking-wide">
-                    {user.role === 'contractor' ? 'Verified Contractor' : 'Customer'}
+                    {user.role === 'admin' ? 'Platform Administrator' : user.role === 'contractor' ? 'Verified Contractor' : 'Customer'}
                   </div>
                 </div>
-                <Link
-                  href="/account"
-                  onClick={onClose}
-                  className="px-3 py-1.5 bg-slate-900 text-amber-400 text-xs font-bold rounded-lg"
-                >
-                  Account
-                </Link>
+                <div className="flex items-center gap-1.5">
+                  {user.role === 'admin' && (
+                    <Link
+                      href="/admin"
+                      onClick={onClose}
+                      className="px-2.5 py-1.5 bg-purple-900 text-amber-300 text-xs font-bold rounded-lg"
+                    >
+                      Admin
+                    </Link>
+                  )}
+                  <Link
+                    href="/account"
+                    onClick={onClose}
+                    className="px-3 py-1.5 bg-slate-900 text-amber-400 text-xs font-bold rounded-lg"
+                  >
+                    Account
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-between">

@@ -215,19 +215,19 @@ export default function OrdersHistoryPage() {
 
                   {/* Materials Preview */}
                   <div className="py-3 divide-y divide-slate-100">
-                    {order.items.map((item, idx) => (
+                    {(order.items || order.order_items || []).map((item, idx) => (
                       <div key={idx} className="py-2 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full bg-orange-500" />
                           <span className="font-semibold text-slate-800">
-                            {item.product_title_snapshot}
+                            {item.product_title_snapshot || 'Material'}
                           </span>
                           <span className="text-slate-400">
-                            ({item.quantity} {item.unit_snapshot})
+                            ({item.quantity} {item.unit_snapshot || 'units'})
                           </span>
                         </div>
                         <span className="font-mono text-slate-700">
-                          {formatPaiseToRupees(item.total_paise)}
+                          {formatPaiseToRupees(item.total_paise || item.unit_price_paise * item.quantity || 0)}
                         </span>
                       </div>
                     ))}

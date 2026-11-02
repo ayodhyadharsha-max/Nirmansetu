@@ -583,15 +583,29 @@ export default function AccountPage() {
 
                         {/* Items Preview */}
                         <div className="space-y-1">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Materials ({order.items.length}):</p>
-                          <ul className="text-xs text-slate-700 divide-y divide-slate-100">
-                            {order.items.map((it) => (
-                              <li key={it.id} className="py-1.5 flex justify-between">
-                                <span className="font-medium">{it.product_title_snapshot} ({it.quantity} {it.unit_snapshot})</span>
-                                <span className="font-mono text-slate-900">{formatPaiseToRupees(it.total_paise)}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          {(() => {
+                            const itemsList = order.items || order.order_items || [];
+                            return (
+                              <>
+                                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                  Materials ({itemsList.length}):
+                                </p>
+                                <ul className="text-xs text-slate-700 divide-y divide-slate-100">
+                                  {itemsList.map((it) => (
+                                    <li key={it.id} className="py-1.5 flex justify-between">
+                                      <span className="font-medium">
+                                        {it.product_title_snapshot || 'Building Material'} ({it.quantity}{' '}
+                                        {it.unit_snapshot || 'units'})
+                                      </span>
+                                      <span className="font-mono text-slate-900">
+                                        {formatPaiseToRupees(it.total_paise || it.unit_price_paise * it.quantity || 0)}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </>
+                            );
+                          })()}
                         </div>
 
                         {/* Drop-off OTP Status */}
